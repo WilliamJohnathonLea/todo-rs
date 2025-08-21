@@ -49,7 +49,7 @@ pub fn new_task_dialog<'a>(
     task_title: &'a str,
     task_description: &'a text_editor::Content,
 ) -> Element<'a, Message> {
-    column![
+    let content = column![
         text("New Task").size(24),
         text("Title"),
         text_input("", task_title)
@@ -57,7 +57,9 @@ pub fn new_task_dialog<'a>(
             .on_paste(Message::TaskTitleUpdated)
             .on_submit(Message::SubmitTask),
         text("Description"),
-        text_editor(task_description).on_action(Message::TaskDescUpdated),
+        text_editor(task_description)
+            .height(Length::Fill)
+            .on_action(Message::TaskDescUpdated),
         row![
             button("Add Task").on_press(Message::SubmitTask),
             button("Cancel").on_press(Message::CloseDialog)
@@ -65,12 +67,20 @@ pub fn new_task_dialog<'a>(
         .spacing(8)
     ]
     .spacing(8)
-    .align_x(Horizontal::Center)
-    .into()
+    .align_x(Horizontal::Center);
+
+    container(content)
+        .style(container::bordered_box)
+        .padding([16, 16])
+        .into()
 }
 
 pub fn view_task_dialog<'a>(task: &'a Task) -> Element<'a, Message> {
-    column![text(&task.title), text(&task.description)].into()
+    let content = column![text(&task.title), text(&task.description)];
+    container(content)
+        .style(container::bordered_box)
+        .padding([16, 16])
+        .into()
 }
 
 fn task_card<'a>(t: &'a Task) -> Element<'a, Message> {
