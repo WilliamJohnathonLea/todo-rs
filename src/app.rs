@@ -17,7 +17,7 @@ pub enum Message {
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
     SubmitTask,
-    RemoveTask,
+    RemoveTask(String, u32),
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +51,14 @@ impl App {
         None
     }
 
+    fn remove_task(&mut self, lane: String, task_id: u32) {
+        if let Some(vec) = self.tasks.get_mut(&lane) {
+            if let Some(pos) = vec.iter().position(|task| task.id == task_id) {
+                vec.remove(pos);
+            }
+        }
+    }
+
     pub fn update(&mut self, msg: Message) {
         match msg {
             Message::OpenDialog(modal_type) => self.modal_type = modal_type,
@@ -67,7 +75,9 @@ impl App {
                 self.next_id += 1;
                 self.hide_dialog();
             }
-            Message::RemoveTask => println!("Task removed!"),
+            Message::RemoveTask(lane, task_id) => {
+                self.remove_task(lane, task_id);
+            }
         }
     }
 
@@ -108,9 +118,12 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
+        let dummy_task_td = Task::new(999, "Test".into(), "This is a test".into());
+        let dummy_task_ip = Task::new(999, "Test".into(), "This is a test".into());
+
         let mut tasks = HashMap::new();
-        tasks.insert(TO_DO.into(), vec![]);
-        tasks.insert(IN_PROGRESS.into(), vec![]);
+        tasks.insert(TO_DO.into(), vec![dummy_task_td]);
+        tasks.insert(IN_PROGRESS.into(), vec![dummy_task_ip]);
         tasks.insert(DONE.into(), vec![]);
 
         Self {

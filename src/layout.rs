@@ -39,7 +39,7 @@ pub fn swim_lane<'a>(title: &'a str, tasks: &'a [Task]) -> Element<'a, Message> 
     let mut content = column!(lane_title).spacing(8).width(Length::Fill);
 
     for t in tasks {
-        content = content.push(task_card(t));
+        content = content.push(task_card(t, title));
     }
 
     content.into()
@@ -83,10 +83,10 @@ pub fn view_task_dialog<'a>(task: &'a Task) -> Element<'a, Message> {
         .into()
 }
 
-fn task_card<'a>(t: &'a Task) -> Element<'a, Message> {
+fn task_card<'a>(t: &'a Task, lane: &'a str) -> Element<'a, Message> {
     let card_content = row![
         column![text(&t.title).size(20), text(t.id)].width(Length::Fill),
-        button("X").on_press(Message::RemoveTask)
+        button("X").on_press(Message::RemoveTask(lane.into(), t.id))
     ];
 
     let card = container(card_content)
