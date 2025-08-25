@@ -1,5 +1,4 @@
 use crate::app::Message;
-use crate::app::ModalType::ViewTask;
 use crate::task::Task;
 use iced::alignment::Horizontal;
 use iced::widget::{
@@ -34,12 +33,12 @@ pub fn modal<'a>(
     .into()
 }
 
-pub fn swim_lane<'a>(title: &'a str, tasks: &'a [Task]) -> Element<'a, Message> {
+pub fn swim_lane<'a>(title: String, tasks: Vec<&'a Task>) -> Element<'a, Message> {
     let lane_title = text!("{} ({})", title, tasks.len()).size(24);
     let mut content = column!(lane_title).spacing(8).width(Length::Fill);
 
     for t in tasks {
-        content = content.push(task_card(t, title));
+        content = content.push(t.view().map(|msg| Message::TaskMessage(msg)));
     }
 
     content.into()
@@ -80,21 +79,5 @@ pub fn view_task_dialog<'a>(task: &'a Task) -> Element<'a, Message> {
     container(content)
         .style(container::bordered_box)
         .padding([16, 16])
-        .into()
-}
-
-fn task_card<'a>(t: &'a Task, lane: &'a str) -> Element<'a, Message> {
-    let card_content = row![
-        column![text(&t.title).size(20), text(t.id)].width(Length::Fill),
-        button("X").on_press(Message::RemoveTask(lane.into(), t.id))
-    ];
-
-    let card = container(card_content)
-        .style(container::rounded_box)
-        .padding(8)
-        .width(Length::Fill);
-
-    mouse_area(card)
-        .on_press(Message::OpenDialog(ViewTask(t.id)))
         .into()
 }
