@@ -6,6 +6,7 @@ mod task;
 
 fn main() -> iced::Result {
     iced::application("ToDo", App::update, App::view)
+        .subscription(App::subscription)
         .theme(|_| iced::Theme::KanagawaDragon)
         .run()
 }

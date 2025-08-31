@@ -1,7 +1,10 @@
 use std::collections::HashMap;
+use std::fs;
 
+use directories::BaseDirs;
 use iced::widget::{button, column, row, text_editor};
-use iced::{Element, Length};
+use iced::{Element, Length, Subscription};
+use serde::{Deserialize, Serialize};
 
 use crate::layout::{modal, new_task_dialog, swim_lane, view_task_dialog};
 use crate::task::{Task, TaskMessage};
@@ -18,6 +21,7 @@ pub enum Message {
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
     SubmitTask,
+    WindowEvent(iced::window::Event),
 }
 
 #[derive(Debug, Clone)]
@@ -27,7 +31,38 @@ pub enum ModalType {
     ViewTask(u32),
 }
 
+#[derive(Deserialize, Serialize)]
+pub struct Config {
+    lanes: Vec<String>,
+}
+
+impl Config {
+    pub fn load() -> Config {
+        if let Some(base_dirs) = BaseDirs::new() {
+            let path = base_dirs.config_dir().join("todo_rs.toml");
+            fs::read(path)
+                .map_err(|err| err.to_string())
+                .and_then(|contents| toml::from_slice(&contents).map_err(|err| err.to_string()))
+                .unwrap_or_else(|err| {
+                    println!("Error loading config file: {}", err);
+                    Default::default()
+                })
+        } else {
+            Default::default()
+        }
+    }
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            lanes: vec![TO_DO.into(), IN_PROGRESS.into(), DONE.into()],
+        }
+    }
+}
+
 pub struct App {
+    config: Config,
     modal_type: ModalType,
     new_task_text: String,
     new_task_description: text_editor::Content,
@@ -60,6 +95,10 @@ impl App {
         }
     }
 
+    pub fn subscription(&self) -> Subscription<Message> {
+        iced::window::events().map(|(_, event)| Message::WindowEvent(event))
+    }
+
     pub fn update(&mut self, msg: Message) {
         match msg {
             Message::TaskMessage(task_msg) => match task_msg {
@@ -84,11 +123,15 @@ impl App {
                 self.next_id += 1;
                 self.hide_dialog();
             }
+            Message::WindowEvent(event) => {
+                println!("Window event: {:?}", event);
+                // This may be of use later on
+            }
         }
     }
 
     pub fn view(&self) -> Element<Message> {
-        let order = [TO_DO, IN_PROGRESS, DONE];
+        let order = &self.config.lanes;
         let mut grouped_by_lane: HashMap<&str, Vec<&Task>> = HashMap::new();
 
         for task in &self.tasks {
@@ -96,7 +139,7 @@ impl App {
         }
 
         let lanes = order.into_iter().map(|lane| {
-            let tasks = grouped_by_lane.remove(lane).unwrap_or_default();
+            let tasks = grouped_by_lane.remove(lane.as_str()).unwrap_or_default();
             swim_lane(lane.into(), tasks)
         });
 
@@ -130,17 +173,13 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
-        let dummy_task_td = Task::new(1, "Test".into(), "This is a test".into());
-        let mut dummy_task_ip = Task::new(2, "Test".into(), "This is a test".into());
-        dummy_task_ip.lane = IN_PROGRESS.into();
-
-        let tasks = vec![dummy_task_td, dummy_task_ip];
-
+        let config = Config::load();
         Self {
+            config,
             modal_type: ModalType::None,
             new_task_text: String::new(),
             new_task_description: text_editor::Content::new(),
-            tasks,
+            tasks: vec![],
             next_id: 1,
         }
     }
