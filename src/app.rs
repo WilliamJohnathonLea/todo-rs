@@ -3,7 +3,7 @@ use std::fs;
 
 use directories::BaseDirs;
 use iced::widget::{button, column, row, text_editor};
-use iced::{Element, Length, Subscription};
+use iced::{Element, Length, Subscription, window};
 use serde::{Deserialize, Serialize};
 
 use crate::layout::{modal, new_task_dialog, swim_lane, view_task_dialog};
@@ -21,7 +21,7 @@ pub enum Message {
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
     SubmitTask,
-    WindowEvent(iced::window::Event),
+    EventReceived(iced::Event),
 }
 
 #[derive(Debug, Clone)]
@@ -50,6 +50,14 @@ impl Config {
         } else {
             Default::default()
         }
+    }
+
+    pub fn save(&self) -> Result<(), String> {
+        let dirs = BaseDirs::new().ok_or("Could not get directories")?;
+        let conf_file = dirs.config_dir().join("todo_rs.toml");
+        let serialized = toml::to_string_pretty(self)
+            .map_err(|err| format!("Config serialization error: {}", err))?;
+        fs::write(conf_file, serialized).map_err(|err| format!("Error saving Config: {}", err))
     }
 }
 
@@ -96,25 +104,42 @@ impl App {
     }
 
     pub fn subscription(&self) -> Subscription<Message> {
-        iced::window::events().map(|(_, event)| Message::WindowEvent(event))
+        iced::event::listen().map(|event| Message::EventReceived(event))
     }
 
-    pub fn update(&mut self, msg: Message) {
+    pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::TaskMessage(task_msg) => match task_msg {
                 TaskMessage::MoveToLane(_, task_id) => {
                     self.find_task_by_id_mut(task_id)
                         .map(|t| t.update(task_msg));
+                    iced::Task::none()
                 }
-                TaskMessage::RemoveTask(lane, task_id) => self.remove_task(lane, task_id),
-                TaskMessage::OpenModal(modal_type) => self.modal_type = modal_type,
+                TaskMessage::RemoveTask(lane, task_id) => {
+                    self.remove_task(lane, task_id);
+                    iced::Task::none()
+                }
+                TaskMessage::OpenModal(modal_type) => {
+                    self.modal_type = modal_type;
+                    iced::Task::none()
+                }
             },
-            Message::OpenModal(modal_type) => self.modal_type = modal_type,
+            Message::OpenModal(modal_type) => {
+                self.modal_type = modal_type;
+                iced::Task::none()
+            }
             Message::CloseDialog => {
                 self.hide_dialog();
+                iced::Task::none()
             }
-            Message::TaskTitleUpdated(task_text) => self.new_task_text = task_text,
-            Message::TaskDescUpdated(action) => self.new_task_description.perform(action),
+            Message::TaskTitleUpdated(task_text) => {
+                self.new_task_text = task_text;
+                iced::Task::none()
+            }
+            Message::TaskDescUpdated(action) => {
+                self.new_task_description.perform(action);
+                iced::Task::none()
+            }
             Message::SubmitTask => {
                 let title = self.new_task_text.clone();
                 let desc = self.new_task_description.text();
@@ -122,10 +147,15 @@ impl App {
                 self.tasks.push(task);
                 self.next_id += 1;
                 self.hide_dialog();
+                iced::Task::none()
             }
-            Message::WindowEvent(event) => {
-                println!("Window event: {:?}", event);
-                // This may be of use later on
+            Message::EventReceived(event) => {
+                if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
+                    let _ = self.config.save();
+                    window::get_latest().and_then(window::close)
+                } else {
+                    iced::Task::none()
+                }
             }
         }
     }
