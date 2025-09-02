@@ -7,11 +7,14 @@ use iced::widget::{
 };
 use iced::{Color, Element, Length};
 
-pub fn modal<'a>(
+pub fn modal<'a, Message>(
     base: impl Into<Element<'a, Message>>,
     content: impl Into<Element<'a, Message>>,
     on_blur: Message,
-) -> Element<'a, Message> {
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
     stack![
         base.into(),
         opaque(
@@ -33,35 +36,75 @@ pub fn modal<'a>(
     .into()
 }
 
-pub fn swim_lane<'a>(title: String, tasks: Vec<&'a Task>) -> Element<'a, Message> {
-    let lane_title = text!("{} ({})", title, tasks.len()).size(24);
+pub fn swim_lane<'a, Message>(
+    title: String,
+    tasks: Vec<Element<'a, Message>>,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let lane_title = text(title).size(24);
     let mut content = column!(lane_title).spacing(8).width(Length::Fill);
 
-    for t in tasks {
-        content = content.push(t.view().map(|msg| Message::TaskMessage(msg)));
+    for task in tasks {
+        content = content.push(task);
     }
 
     content.into()
 }
 
-pub fn new_task_dialog<'a>(
+pub fn task_card<'a, Message>(
+    task: &'a Task,
+    remove: Message,
+    open_modal: Message,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let card_content = row![
+        column![
+            text(&task.title).size(20),
+            text(task.id),
+            //task.move_button(),
+        ]
+        .width(Length::Fill),
+        button("X").on_press(remove)
+    ];
+
+    let card = container(card_content)
+        .style(container::rounded_box)
+        .padding(8)
+        .width(Length::Fill);
+
+    mouse_area(card).on_press(open_modal).into()
+}
+
+pub fn new_task_dialog<'a, Message, TU, DU>(
     task_title: &'a str,
     task_description: &'a text_editor::Content,
-) -> Element<'a, Message> {
+    title_update: &'a TU,
+    description_update: &'a DU,
+    submit: Message,
+    cancel: Message,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+    TU: Fn(String) -> Message + 'a,
+    DU: Fn(text_editor::Action) -> Message + 'a,
+{
     let content = column![
         text("New Task").size(24),
         text("Title"),
         text_input("", task_title)
-            .on_input(Message::TaskTitleUpdated)
-            .on_paste(Message::TaskTitleUpdated)
-            .on_submit(Message::SubmitTask),
+            .on_input(title_update)
+            .on_paste(title_update),
         text("Description"),
         text_editor(task_description)
             .height(Length::Fill)
-            .on_action(Message::TaskDescUpdated),
+            .on_action(description_update),
         row![
-            button("Add Task").on_press(Message::SubmitTask),
-            button("Cancel").on_press(Message::CloseDialog)
+            button("Add Task").on_press(submit),
+            button("Cancel").on_press(cancel)
         ]
         .spacing(8)
     ]
