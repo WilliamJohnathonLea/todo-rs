@@ -5,6 +5,7 @@ use iced::widget::{button, column, row};
 use iced::{Element, Length, Subscription, window};
 use serde::{Deserialize, Serialize};
 
+use crate::layout::modal;
 use crate::task;
 
 pub(crate) const TO_DO: &str = "To do";
@@ -14,16 +15,7 @@ pub(crate) const DONE: &str = "Done";
 #[derive(Debug, Clone)]
 pub enum Message {
     TaskMessage(task::Message),
-    OpenModal(ModalType),
-    CloseDialog,
     EventReceived(iced::Event),
-}
-
-#[derive(Debug, Clone)]
-pub enum ModalType {
-    None,
-    NewTask,
-    ViewTask(u32),
 }
 
 #[derive(Deserialize, Serialize)]
@@ -66,19 +58,10 @@ impl Default for Config {
 
 pub struct App {
     config: Config,
-    modal_type: ModalType,
     tasks_controller: task::ViewController,
 }
 
 impl App {
-    fn hide_dialog(&mut self) {
-        self.modal_type = ModalType::None;
-    }
-
-    // fn find_task_by_id(&self, id: u32) -> Option<&Task> {
-    //     self.tasks.iter().find(|task| task.id == id)
-    // }
-
     pub fn subscription(&self) -> Subscription<Message> {
         iced::event::listen().map(|event| Message::EventReceived(event))
     }
@@ -87,14 +70,6 @@ impl App {
         match msg {
             Message::TaskMessage(task_msg) => {
                 self.tasks_controller.update(task_msg);
-                iced::Task::none()
-            }
-            Message::OpenModal(modal_type) => {
-                self.modal_type = modal_type;
-                iced::Task::none()
-            }
-            Message::CloseDialog => {
-                self.hide_dialog();
                 iced::Task::none()
             }
             Message::EventReceived(event) => {
@@ -109,32 +84,29 @@ impl App {
     }
 
     pub fn view(&self) -> Element<Message> {
-        let content = column![
-            row![button("Add Task").on_press(Message::OpenModal(ModalType::NewTask))],
-            self.tasks_controller.view().map(Message::TaskMessage),
-        ]
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .spacing(4);
+        let base_content =
+            || {
+                column![
+                    row![button("Add Task").on_press(Message::TaskMessage(
+                        task::Message::OpenModal(task::Modal::NewTask)
+                    ))],
+                    self.tasks_controller.view().map(Message::TaskMessage),
+                ]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .spacing(4)
+            };
 
-        // match self.modal_type {
-        //     ModalType::None => content.into(),
-        //     ModalType::NewTask => {
-        //         let add = new_task_dialog(&self.new_task_text, &self.new_task_description);
-        //         modal(content, add, Message::CloseDialog)
-        //     }
-        //     ModalType::ViewTask(task_id) => {
-        //         let task = self.find_task_by_id(task_id);
-        //         if let Some(task) = task {
-        //             let view = view_task_dialog(task);
-        //             modal(content, view, Message::CloseDialog)
-        //         } else {
-        //             // Make an error UI if the ticket id doesn't exist. (Although this shouldn't happen)
-        //             content.into()
-        //         }
-        //     }
-        // }
-        content.into()
+        self.tasks_controller
+            .modal_view()
+            .map(|v| {
+                modal(
+                    base_content(),
+                    v.map(Message::TaskMessage),
+                    Message::TaskMessage(task::Message::CloseModal),
+                )
+            })
+            .unwrap_or(base_content().into())
     }
 }
 
@@ -144,7 +116,6 @@ impl Default for App {
         Self {
             tasks_controller: task::ViewController::new(&config),
             config,
-            modal_type: ModalType::None,
         }
     }
 }

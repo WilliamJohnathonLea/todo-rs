@@ -1,4 +1,3 @@
-use crate::app::Message;
 use crate::task::Task;
 use iced::alignment::Horizontal;
 use iced::widget::{
@@ -57,6 +56,7 @@ pub fn task_card<'a, Message>(
     task: &'a Task,
     remove: Message,
     open_modal: Message,
+    next_lane: Option<Message>,
 ) -> Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -65,7 +65,7 @@ where
         column![
             text(&task.title).size(20),
             text(task.id),
-            //task.move_button(),
+            button(">").on_press_maybe(next_lane),
         ]
         .width(Length::Fill),
         button("X").on_press(remove)
@@ -117,7 +117,10 @@ where
         .into()
 }
 
-pub fn view_task_dialog<'a>(task: &'a Task) -> Element<'a, Message> {
+pub fn view_task_dialog<'a, Message>(task: &'a Task) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
     let content = column![text(&task.title), text(&task.description)];
     container(content)
         .style(container::bordered_box)
