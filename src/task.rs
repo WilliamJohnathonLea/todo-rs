@@ -5,7 +5,7 @@ use iced::Element;
 use iced::widget::{row, text_editor};
 
 use crate::app::Config;
-use crate::layout::{new_task_dialog, swim_lane, task_card, view_task_dialog};
+use crate::layout::{swim_lane, task_card, task_dialog, task_dialog_mut};
 
 #[derive(Default)]
 pub struct Task {
@@ -20,6 +20,7 @@ pub enum Message {
     MoveToLane(String, u32),
     RemoveTask(String, u32),
     CreateTask,
+    EditTask(u32),
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
     OpenModal(Modal),
@@ -30,6 +31,7 @@ pub enum Message {
 pub enum Modal {
     NewTask,
     ViewTask(u32),
+    EditTask(u32),
 }
 
 pub struct ViewController {
@@ -104,7 +106,25 @@ impl ViewController {
                 self.next_id += 1;
                 self.hide_dialog();
             }
-            Message::OpenModal(modal) => self.modal = Some(modal),
+            Message::EditTask(task_id) => {
+                let title = self.new_task_title.clone();
+                let desc = self.new_task_description.text();
+                if let Some(task) = self.find_task_by_id_mut(task_id) {
+                    task.title = title;
+                    task.description = desc;
+                }
+                self.hide_dialog();
+            }
+            Message::OpenModal(modal) => {
+                if let Modal::EditTask(task_id) = modal {
+                    if let Some(task) = self.find_task_by_id(task_id) {
+                        let desc = task.description.clone();
+                        self.new_task_title = task.title.clone();
+                        self.new_task_description = text_editor::Content::with_text(&desc);
+                    }
+                }
+                self.modal = Some(modal);
+            }
             Message::CloseModal => self.hide_dialog(),
             Message::TaskTitleUpdated(task_text) => self.new_task_title = task_text,
             Message::TaskDescUpdated(action) => self.new_task_description.perform(action),
@@ -147,14 +167,30 @@ impl ViewController {
         match self.modal {
             Some(Modal::ViewTask(task_id)) => {
                 let maybe_task = self.find_task_by_id(task_id);
-                maybe_task.map(|t| view_task_dialog(t))
+                maybe_task.map(|t| {
+                    task_dialog(
+                        t,
+                        Message::OpenModal(Modal::EditTask(t.id)),
+                        Message::CloseModal,
+                    )
+                })
             }
-            Some(Modal::NewTask) => Some(new_task_dialog(
+            Some(Modal::NewTask) => Some(task_dialog_mut(
+                "New Task".into(),
                 &self.new_task_title,
                 &self.new_task_description,
                 &Message::TaskTitleUpdated,
                 &Message::TaskDescUpdated,
                 Message::CreateTask,
+                Message::CloseModal,
+            )),
+            Some(Modal::EditTask(task_id)) => Some(task_dialog_mut(
+                "Edit Task".into(),
+                &self.new_task_title,
+                &self.new_task_description,
+                &Message::TaskTitleUpdated,
+                &Message::TaskDescUpdated,
+                Message::EditTask(task_id),
                 Message::CloseModal,
             )),
             None => None,

@@ -79,7 +79,8 @@ where
     mouse_area(card).on_press(open_modal).into()
 }
 
-pub fn new_task_dialog<'a, Message, TU, DU>(
+pub fn task_dialog_mut<'a, Message, TU, DU>(
+    modal_title: String,
     task_title: &'a str,
     task_description: &'a text_editor::Content,
     title_update: &'a TU,
@@ -93,7 +94,7 @@ where
     DU: Fn(text_editor::Action) -> Message + 'a,
 {
     let content = column![
-        text("New Task").size(24),
+        text(modal_title).size(24),
         text("Title"),
         text_input("", task_title)
             .on_input(title_update)
@@ -103,7 +104,7 @@ where
             .height(Length::Fill)
             .on_action(description_update),
         row![
-            button("Add Task").on_press(submit),
+            button("Submit").on_press(submit),
             button("Cancel").on_press(cancel)
         ]
         .spacing(8)
@@ -117,11 +118,23 @@ where
         .into()
 }
 
-pub fn view_task_dialog<'a, Message>(task: &'a Task) -> Element<'a, Message>
+pub fn task_dialog<'a, Message>(
+    task: &'a Task,
+    edit: Message,
+    close: Message,
+) -> Element<'a, Message>
 where
     Message: Clone + 'a,
 {
-    let content = column![text(&task.title), text(&task.description)];
+    let edit_button = button("Edit").on_press(edit);
+    let close_button = button("X").on_press(close);
+    let title_row = row![
+        container(text(&task.title).size(24))
+            .align_x(Horizontal::Left)
+            .width(Length::Fill),
+        container(row![edit_button, close_button].spacing(4)).align_x(Horizontal::Right)
+    ];
+    let content = column![title_row, text(&task.description)];
     container(content)
         .style(container::bordered_box)
         .padding([16, 16])
