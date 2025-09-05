@@ -11,8 +11,11 @@ const TO_DO: &str = "To do";
 const IN_PROGRESS: &str = "In progress";
 const DONE: &str = "Done";
 
+const APP_DIR: &str = "todo_rs";
+
 #[derive(Debug, Clone)]
 pub enum Message {
+    NoOp,
     ConfigLoaded(Result<Config, String>),
     TaskMessage(task::Message),
     EventReceived(iced::Event),
@@ -40,7 +43,10 @@ impl App {
     pub fn new() -> (Self, Task<Message>) {
         (
             Default::default(),
-            iced::Task::perform(load_config(), Message::ConfigLoaded),
+            iced::Task::batch([
+                iced::Task::perform(setup_app_dirs(), |_| Message::NoOp),
+                iced::Task::perform(load_config(), Message::ConfigLoaded),
+            ]),
         )
     }
 
@@ -70,6 +76,7 @@ impl App {
                     iced::Task::none()
                 }
             }
+            Message::NoOp => iced::Task::none(),
         }
     }
 
@@ -109,9 +116,31 @@ impl Default for App {
     }
 }
 
+async fn setup_app_dirs() -> Result<(), String> {
+    let dirs = BaseDirs::new().ok_or("Could not get directories")?;
+    let data_dir = dirs.data_dir().join(APP_DIR);
+    let conf_dir = dirs.config_dir().join(APP_DIR);
+
+    let data = tokio::fs::create_dir(data_dir)
+        .map_err(|_| format!("Could not create data dir for app"))
+        .await;
+    let conf = tokio::fs::create_dir(conf_dir)
+        .map_err(|_| format!("Could not create config dir for app"))
+        .await;
+
+    data.and_then(|_| conf)
+}
+
+async fn setup_db_connection() -> Result<(), String> {
+    let dirs = BaseDirs::new().ok_or("Could not get directories")?;
+    let data_dir = dirs.data_dir().join(APP_DIR);
+    let db_file = data_dir.join("tasks.db");
+    Err("not yet implemented".into())
+}
+
 async fn load_config() -> Result<Config, String> {
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
-    let conf_file = dirs.config_dir().join("todo_rs.toml");
+    let conf_file = dirs.config_dir().join("todo_rs/config.toml");
     let contents = tokio::fs::read(conf_file)
         .map_err(|err| err.to_string())
         .await?;
@@ -120,7 +149,7 @@ async fn load_config() -> Result<Config, String> {
 
 async fn save_config(config: Config) -> Result<(), String> {
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
-    let conf_file = dirs.config_dir().join("todo_rs.toml");
+    let conf_file = dirs.config_dir().join("todo_rs/config.toml");
     let serialized = toml::to_string_pretty(&config)
         .map_err(|err| format!("Config serialization error: {}", err))?;
     tokio::fs::write(conf_file, serialized)
