@@ -4,7 +4,7 @@ use std::vec;
 use iced::Element;
 use iced::widget::{row, text_editor};
 
-use crate::app::Config;
+use crate::app;
 use crate::layout::{swim_lane, task_card, task_dialog, task_dialog_mut};
 
 #[derive(Default)]
@@ -44,22 +44,22 @@ pub struct ViewController {
 }
 
 impl Task {
-    pub fn new(id: u32, title: String, description: String) -> Self {
+    pub fn new(id: u32, title: String, description: String, lane: String) -> Self {
         Task {
             id,
             title,
             description,
-            lane: crate::app::TO_DO.into(),
+            lane,
         }
     }
 }
 
 impl ViewController {
-    pub fn new(config: &Config) -> Self {
+    pub fn new() -> Self {
         Self {
             modal: None,
-            lanes: config.lanes.clone(),
-            tasks: vec![Task::new(999, "Test".into(), "This is a test".into())],
+            lanes: vec![],
+            tasks: vec![],
             next_id: 1,
             new_task_title: Default::default(),
             new_task_description: Default::default(),
@@ -90,6 +90,11 @@ impl ViewController {
         }
     }
 
+    pub fn configure(&mut self, conf: &app::Config) {
+        let lanes = conf.lanes.clone();
+        self.lanes = lanes;
+    }
+
     pub fn update(&mut self, msg: Message) {
         match msg {
             Message::MoveToLane(new_lane, task_id) => {
@@ -101,8 +106,10 @@ impl ViewController {
             Message::CreateTask => {
                 let title = self.new_task_title.clone();
                 let desc = self.new_task_description.text();
-                let task = Task::new(self.next_id, title, desc);
-                self.tasks.push(task);
+                if let Some(lane) = self.lanes.get(0) {
+                    let task = Task::new(self.next_id, title, desc, lane.clone());
+                    self.tasks.push(task);
+                }
                 self.next_id += 1;
                 self.hide_dialog();
             }

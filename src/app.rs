@@ -1,51 +1,26 @@
-use std::fs;
-
 use directories::BaseDirs;
+use iced::futures::TryFutureExt;
 use iced::widget::{button, column, row};
-use iced::{Element, Length, Subscription, window};
+use iced::{Element, Length, Subscription, Task, window};
 use serde::{Deserialize, Serialize};
 
 use crate::layout::modal;
 use crate::task;
 
-pub(crate) const TO_DO: &str = "To do";
-pub(crate) const IN_PROGRESS: &str = "In progress";
-pub(crate) const DONE: &str = "Done";
+const TO_DO: &str = "To do";
+const IN_PROGRESS: &str = "In progress";
+const DONE: &str = "Done";
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    ConfigLoaded(Result<Config, String>),
     TaskMessage(task::Message),
     EventReceived(iced::Event),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     pub lanes: Vec<String>,
-}
-
-impl Config {
-    pub fn load() -> Config {
-        if let Some(base_dirs) = BaseDirs::new() {
-            let path = base_dirs.config_dir().join("todo_rs.toml");
-            fs::read(path)
-                .map_err(|err| err.to_string())
-                .and_then(|contents| toml::from_slice(&contents).map_err(|err| err.to_string()))
-                .unwrap_or_else(|err| {
-                    println!("Error loading config file: {}", err);
-                    Default::default()
-                })
-        } else {
-            Default::default()
-        }
-    }
-
-    pub fn save(&self) -> Result<(), String> {
-        let dirs = BaseDirs::new().ok_or("Could not get directories")?;
-        let conf_file = dirs.config_dir().join("todo_rs.toml");
-        let serialized = toml::to_string_pretty(self)
-            .map_err(|err| format!("Config serialization error: {}", err))?;
-        fs::write(conf_file, serialized).map_err(|err| format!("Error saving Config: {}", err))
-    }
 }
 
 impl Default for Config {
@@ -62,20 +37,35 @@ pub struct App {
 }
 
 impl App {
+    pub fn new() -> (Self, Task<Message>) {
+        (
+            Default::default(),
+            iced::Task::perform(load_config(), Message::ConfigLoaded),
+        )
+    }
+
     pub fn subscription(&self) -> Subscription<Message> {
         iced::event::listen().map(|event| Message::EventReceived(event))
     }
 
     pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
+            Message::ConfigLoaded(config) => {
+                if let Ok(config) = config {
+                    self.config = config
+                }
+                self.tasks_controller.configure(&self.config);
+                iced::Task::none()
+            }
             Message::TaskMessage(task_msg) => {
                 self.tasks_controller.update(task_msg);
                 iced::Task::none()
             }
             Message::EventReceived(event) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
-                    let _ = self.config.save();
-                    window::get_latest().and_then(window::close)
+                    iced::Task::future(save_config(self.config.clone()))
+                        .and_then(|_| window::get_latest())
+                        .and_then(window::close)
                 } else {
                     iced::Task::none()
                 }
@@ -112,10 +102,28 @@ impl App {
 
 impl Default for App {
     fn default() -> Self {
-        let config = Config::load();
         Self {
-            tasks_controller: task::ViewController::new(&config),
-            config,
+            config: Default::default(),
+            tasks_controller: task::ViewController::new(),
         }
     }
+}
+
+async fn load_config() -> Result<Config, String> {
+    let dirs = BaseDirs::new().ok_or("Could not get directories")?;
+    let conf_file = dirs.config_dir().join("todo_rs.toml");
+    let contents = tokio::fs::read(conf_file)
+        .map_err(|err| err.to_string())
+        .await?;
+    toml::from_slice(&contents).map_err(|err| err.to_string())
+}
+
+async fn save_config(config: Config) -> Result<(), String> {
+    let dirs = BaseDirs::new().ok_or("Could not get directories")?;
+    let conf_file = dirs.config_dir().join("todo_rs.toml");
+    let serialized = toml::to_string_pretty(&config)
+        .map_err(|err| format!("Config serialization error: {}", err))?;
+    tokio::fs::write(conf_file, serialized)
+        .map_err(|err| format!("Error saving Config: {}", err))
+        .await
 }

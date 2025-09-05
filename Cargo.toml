@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 directories = "6.0.0"
-iced = "0.13.1"
+iced = { version = "0.13.1", features = ["tokio"] }
 serde = { version = "1.0.219", features = ["derive"] }
+tokio = { version = "1.47.1", features = ["fs", "macros"] }
+# sqlx = { version = "0.8.6", features = ["macros", "_sqlite"] }
 toml = "0.9.5"

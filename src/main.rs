@@ -9,5 +9,5 @@ fn main() -> iced::Result {
         .subscription(App::subscription)
         .theme(|_| iced::Theme::KanagawaDragon)
         .exit_on_close_request(false)
-        .run()
+        .run_with(App::new)
 }
