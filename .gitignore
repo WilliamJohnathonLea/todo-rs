@@ -1,1 +1,4 @@
+.sqlx
+.env
+tasks.db
 /target

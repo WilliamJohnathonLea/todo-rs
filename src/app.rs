@@ -3,6 +3,8 @@ use iced::futures::TryFutureExt;
 use iced::widget::{button, column, row};
 use iced::{Element, Length, Subscription, Task, window};
 use serde::{Deserialize, Serialize};
+use sqlx::migrate::MigrateDatabase;
+use sqlx::{Pool, Sqlite, SqlitePool};
 
 use crate::layout::modal;
 use crate::task;
@@ -17,6 +19,8 @@ const APP_DIR: &str = "todo_rs";
 pub enum Message {
     NoOp,
     ConfigLoaded(Result<Config, String>),
+    DbConnected(Result<Pool<Sqlite>, String>),
+    DbMigrated(Result<Pool<Sqlite>, String>),
     TaskMessage(task::Message),
     EventReceived(iced::Event),
 }
@@ -45,6 +49,7 @@ impl App {
             Default::default(),
             iced::Task::batch([
                 iced::Task::perform(setup_app_dirs(), |_| Message::NoOp),
+                iced::Task::perform(setup_db_connection(), Message::DbConnected),
                 iced::Task::perform(load_config(), Message::ConfigLoaded),
             ]),
         )
@@ -62,6 +67,22 @@ impl App {
                 }
                 self.tasks_controller.configure(&self.config);
                 iced::Task::none()
+            }
+            Message::DbConnected(db) => {
+                if let Ok(db) = db {
+                    iced::Task::perform(migrate_db(db), Message::DbMigrated)
+                } else {
+                    iced::Task::none()
+                }
+            }
+            Message::DbMigrated(db) => {
+                if let Ok(db) = db {
+                    iced::Task::perform(task::get_tasks(db), |res| {
+                        Message::TaskMessage(task::Message::TasksLoaded(res))
+                    })
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::TaskMessage(task_msg) => {
                 self.tasks_controller.update(task_msg);
@@ -131,11 +152,37 @@ async fn setup_app_dirs() -> Result<(), String> {
     data.and_then(|_| conf)
 }
 
-async fn setup_db_connection() -> Result<(), String> {
+async fn setup_db_connection() -> Result<Pool<Sqlite>, String> {
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let data_dir = dirs.data_dir().join(APP_DIR);
     let db_file = data_dir.join("tasks.db");
-    Err("not yet implemented".into())
+    let db_url = db_file
+        .to_str()
+        .map(|s| format!("sqlite://{}", s))
+        .ok_or("Could not create valid db url")?;
+
+    if !Sqlite::database_exists(&db_url).await.unwrap_or(false) {
+        match Sqlite::create_database(&db_url).await {
+            Ok(_) => {
+                SqlitePool::connect(&db_url)
+                    .map_err(|_| "Could not connect to db".into())
+                    .await
+            }
+            Err(_) => Err("error creating db".into()),
+        }
+    } else {
+        SqlitePool::connect(&db_url)
+            .map_err(|_| "Could not connect to db".into())
+            .await
+    }
+}
+
+async fn migrate_db(pool: Pool<Sqlite>) -> Result<Pool<Sqlite>, String> {
+    sqlx::migrate!()
+        .run(&pool)
+        .map_err(|_| String::from("failed to run migration"))
+        .await?;
+    Ok(pool)
 }
 
 async fn load_config() -> Result<Config, String> {

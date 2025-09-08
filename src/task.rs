@@ -2,25 +2,28 @@ use std::collections::HashMap;
 use std::vec;
 
 use iced::Element;
+use iced::futures::TryFutureExt;
 use iced::widget::{row, text_editor};
+use sqlx::{FromRow, Pool, Sqlite};
 
 use crate::app;
 use crate::layout::{swim_lane, task_card, task_dialog, task_dialog_mut};
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, FromRow)]
 pub struct Task {
-    pub id: u32,
+    pub id: i64,
     pub title: String,
-    pub description: String,
+    pub description: Option<String>,
     pub lane: String,
 }
 
 #[derive(Clone, Debug)]
 pub enum Message {
-    MoveToLane(String, u32),
-    RemoveTask(String, u32),
+    MoveToLane(String, i64),
+    RemoveTask(String, i64),
+    TasksLoaded(Result<Vec<Task>, String>),
     CreateTask,
-    EditTask(u32),
+    EditTask(i64),
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
     OpenModal(Modal),
@@ -30,21 +33,22 @@ pub enum Message {
 #[derive(Clone, Debug)]
 pub enum Modal {
     NewTask,
-    ViewTask(u32),
-    EditTask(u32),
+    ViewTask(i64),
+    EditTask(i64),
 }
 
 pub struct ViewController {
     modal: Option<Modal>,
+    db: Option<Pool<Sqlite>>,
     lanes: Vec<String>,
     tasks: Vec<Task>,
-    next_id: u32,
+    next_id: i64,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
 
 impl Task {
-    pub fn new(id: u32, title: String, description: String, lane: String) -> Self {
+    pub fn new(id: i64, title: String, description: Option<String>, lane: String) -> Self {
         Task {
             id,
             title,
@@ -58,6 +62,7 @@ impl ViewController {
     pub fn new() -> Self {
         Self {
             modal: None,
+            db: None,
             lanes: vec![],
             tasks: vec![],
             next_id: 1,
@@ -72,15 +77,15 @@ impl ViewController {
         self.modal = None;
     }
 
-    fn find_task_by_id(&self, id: u32) -> Option<&Task> {
+    fn find_task_by_id(&self, id: i64) -> Option<&Task> {
         self.tasks.iter().find(|task| task.id == id)
     }
 
-    fn find_task_by_id_mut(&mut self, id: u32) -> Option<&mut Task> {
+    fn find_task_by_id_mut(&mut self, id: i64) -> Option<&mut Task> {
         self.tasks.iter_mut().find(|task| task.id == id)
     }
 
-    fn remove_task(&mut self, lane: String, task_id: u32) {
+    fn remove_task(&mut self, lane: String, task_id: i64) {
         if let Some(pos) = self
             .tasks
             .iter()
@@ -103,9 +108,16 @@ impl ViewController {
                 }
             }
             Message::RemoveTask(lane, task_id) => self.remove_task(lane, task_id),
+            Message::TasksLoaded(tasks) => match tasks {
+                Ok(tasks) => {
+                    println!("loaded {} tasks", tasks.len());
+                    self.tasks = tasks
+                }
+                Err(err) => println!("{err}"),
+            },
             Message::CreateTask => {
                 let title = self.new_task_title.clone();
-                let desc = self.new_task_description.text();
+                let desc = Some(self.new_task_description.text());
                 if let Some(lane) = self.lanes.get(0) {
                     let task = Task::new(self.next_id, title, desc, lane.clone());
                     self.tasks.push(task);
@@ -118,7 +130,7 @@ impl ViewController {
                 let desc = self.new_task_description.text();
                 if let Some(task) = self.find_task_by_id_mut(task_id) {
                     task.title = title;
-                    task.description = desc;
+                    task.description = Some(desc);
                 }
                 self.hide_dialog();
             }
@@ -127,7 +139,9 @@ impl ViewController {
                     if let Some(task) = self.find_task_by_id(task_id) {
                         let desc = task.description.clone();
                         self.new_task_title = task.title.clone();
-                        self.new_task_description = text_editor::Content::with_text(&desc);
+                        if let Some(desc) = desc {
+                            self.new_task_description = text_editor::Content::with_text(&desc);
+                        }
                     }
                 }
                 self.modal = Some(modal);
@@ -203,4 +217,11 @@ impl ViewController {
             None => None,
         }
     }
+}
+
+pub async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
+    sqlx::query_as!(Task, "SELECT id, title, description, lane FROM tasks")
+        .fetch_all(&pool)
+        .map_err(|err| format!("got db err: {err}"))
+        .await
 }
