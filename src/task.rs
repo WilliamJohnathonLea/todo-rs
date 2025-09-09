@@ -4,17 +4,24 @@ use std::vec;
 use iced::Element;
 use iced::futures::TryFutureExt;
 use iced::widget::{row, text_editor};
-use sqlx::{FromRow, Pool, Sqlite};
+use sqlx::{Pool, Sqlite};
 
 use crate::app;
 use crate::layout::{swim_lane, task_card, task_dialog, task_dialog_mut};
 
-#[derive(Clone, Debug, Default, FromRow)]
+#[derive(Clone, Debug, Default)]
 pub struct Task {
     pub id: i64,
     pub title: String,
     pub description: Option<String>,
     pub lane: String,
+}
+
+#[derive(Clone, Debug, Default)]
+struct NewTask {
+    title: String,
+    description: Option<String>,
+    lane: String,
 }
 
 #[derive(Clone, Debug)]
@@ -39,18 +46,16 @@ pub enum Modal {
 
 pub struct ViewController {
     modal: Option<Modal>,
-    db: Option<Pool<Sqlite>>,
+    db: Pool<Sqlite>,
     lanes: Vec<String>,
     tasks: Vec<Task>,
-    next_id: i64,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
 
-impl Task {
-    pub fn new(id: i64, title: String, description: Option<String>, lane: String) -> Self {
-        Task {
-            id,
+impl NewTask {
+    pub fn new(title: String, description: Option<String>, lane: String) -> Self {
+        NewTask {
             title,
             description,
             lane,
@@ -59,13 +64,12 @@ impl Task {
 }
 
 impl ViewController {
-    pub fn new() -> Self {
+    pub fn new(db: Pool<Sqlite>, lanes: Vec<String>) -> Self {
         Self {
             modal: None,
-            db: None,
-            lanes: vec![],
+            db,
+            lanes,
             tasks: vec![],
-            next_id: 1,
             new_task_title: Default::default(),
             new_task_description: Default::default(),
         }
@@ -100,30 +104,42 @@ impl ViewController {
         self.lanes = lanes;
     }
 
-    pub fn update(&mut self, msg: Message) {
+    pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::MoveToLane(new_lane, task_id) => {
                 if let Some(task) = self.find_task_by_id_mut(task_id) {
                     task.lane = new_lane;
                 }
+                iced::Task::none()
             }
-            Message::RemoveTask(lane, task_id) => self.remove_task(lane, task_id),
-            Message::TasksLoaded(tasks) => match tasks {
-                Ok(tasks) => {
-                    println!("loaded {} tasks", tasks.len());
-                    self.tasks = tasks
+            Message::RemoveTask(lane, task_id) => {
+                self.remove_task(lane, task_id);
+                iced::Task::none()
+            }
+            Message::TasksLoaded(tasks) => {
+                match tasks {
+                    Ok(tasks) => {
+                        println!("loaded {} tasks", tasks.len());
+                        self.tasks = tasks
+                    }
+                    Err(err) => println!("{err}"),
                 }
-                Err(err) => println!("{err}"),
-            },
+                iced::Task::none()
+            }
             Message::CreateTask => {
                 let title = self.new_task_title.clone();
                 let desc = Some(self.new_task_description.text());
                 if let Some(lane) = self.lanes.get(0) {
-                    let task = Task::new(self.next_id, title, desc, lane.clone());
-                    self.tasks.push(task);
+                    let task = NewTask::new(title, desc, lane.clone());
+                    iced::Task::batch([
+                        iced::Task::perform(insert_task(self.db.clone(), task), |_| {
+                            Message::CloseModal
+                        }),
+                        iced::Task::perform(get_tasks(self.db.clone()), Message::TasksLoaded),
+                    ])
+                } else {
+                    iced::Task::none()
                 }
-                self.next_id += 1;
-                self.hide_dialog();
             }
             Message::EditTask(task_id) => {
                 let title = self.new_task_title.clone();
@@ -132,7 +148,7 @@ impl ViewController {
                     task.title = title;
                     task.description = Some(desc);
                 }
-                self.hide_dialog();
+                iced::Task::done(Message::CloseModal) // TODO: Perform a db edit and then close the modal
             }
             Message::OpenModal(modal) => {
                 if let Modal::EditTask(task_id) = modal {
@@ -145,10 +161,20 @@ impl ViewController {
                     }
                 }
                 self.modal = Some(modal);
+                iced::Task::none()
             }
-            Message::CloseModal => self.hide_dialog(),
-            Message::TaskTitleUpdated(task_text) => self.new_task_title = task_text,
-            Message::TaskDescUpdated(action) => self.new_task_description.perform(action),
+            Message::CloseModal => {
+                self.hide_dialog();
+                iced::Task::none()
+            }
+            Message::TaskTitleUpdated(task_text) => {
+                self.new_task_title = task_text;
+                iced::Task::none()
+            }
+            Message::TaskDescUpdated(action) => {
+                self.new_task_description.perform(action);
+                iced::Task::none()
+            }
         }
     }
 
@@ -224,4 +250,17 @@ pub async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
         .fetch_all(&pool)
         .map_err(|err| format!("got db err: {err}"))
         .await
+}
+
+async fn insert_task(pool: Pool<Sqlite>, t: NewTask) -> Result<(), String> {
+    sqlx::query!(
+        "INSERT INTO tasks (title, description, lane) VALUES (?, ?, ?)",
+        t.title,
+        t.description,
+        t.lane
+    )
+    .execute(&pool)
+    .map_err(|_| "Error inserting task into db".into())
+    .map_ok(|_| ())
+    .await
 }

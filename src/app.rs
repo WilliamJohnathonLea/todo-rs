@@ -1,6 +1,6 @@
 use directories::BaseDirs;
 use iced::futures::TryFutureExt;
-use iced::widget::{button, column, row};
+use iced::widget::{button, center, column, row, text};
 use iced::{Element, Length, Subscription, Task, window};
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::MigrateDatabase;
@@ -14,6 +14,7 @@ const IN_PROGRESS: &str = "In progress";
 const DONE: &str = "Done";
 
 const APP_DIR: &str = "todo_rs";
+const DB_NAME: &str = "tasks.db";
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -38,18 +39,23 @@ impl Default for Config {
     }
 }
 
-pub struct App {
+pub struct Initialised {
     config: Config,
     tasks_controller: task::ViewController,
+}
+
+pub enum App {
+    Initiaising,
+    Initialised(Initialised),
 }
 
 impl App {
     pub fn new() -> (Self, Task<Message>) {
         (
-            Default::default(),
+            Self::Initiaising,
             iced::Task::batch([
                 iced::Task::perform(setup_app_dirs(), |_| Message::NoOp),
-                iced::Task::perform(setup_db_connection(), Message::DbConnected),
+                // iced::Task::perform(setup_db_connection(), Message::DbConnected),
                 iced::Task::perform(load_config(), Message::ConfigLoaded),
             ]),
         )
@@ -60,12 +66,19 @@ impl App {
     }
 
     pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
+        match self {
+            App::Initiaising => iced::Task::none(),
+            App::Initialised(app) => App::update_initialised(app, msg),
+        }
+    }
+
+    fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
-            Message::ConfigLoaded(config) => {
-                if let Ok(config) = config {
-                    self.config = config
+            Message::ConfigLoaded(config_result) => {
+                if let Ok(config) = config_result {
+                    app.config = config
                 }
-                self.tasks_controller.configure(&self.config);
+                app.tasks_controller.configure(&app.config);
                 iced::Task::none()
             }
             Message::DbConnected(db) => {
@@ -84,13 +97,13 @@ impl App {
                     iced::Task::none()
                 }
             }
-            Message::TaskMessage(task_msg) => {
-                self.tasks_controller.update(task_msg);
-                iced::Task::none()
-            }
+            Message::TaskMessage(task_msg) => app
+                .tasks_controller
+                .update(task_msg)
+                .map(Message::TaskMessage),
             Message::EventReceived(event) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
-                    iced::Task::future(save_config(self.config.clone()))
+                    iced::Task::future(save_config(app.config.clone()))
                         .and_then(|_| window::get_latest())
                         .and_then(window::close)
                 } else {
@@ -102,37 +115,32 @@ impl App {
     }
 
     pub fn view(&self) -> Element<Message> {
-        let base_content =
-            || {
-                column![
-                    row![button("Add Task").on_press(Message::TaskMessage(
-                        task::Message::OpenModal(task::Modal::NewTask)
-                    ))],
-                    self.tasks_controller.view().map(Message::TaskMessage),
-                ]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .spacing(4)
-            };
+        match self {
+            App::Initiaising => center(text("Loading...")).into(),
+            App::Initialised(app) => {
+                let base_content = || {
+                    column![
+                        row![button("Add Task").on_press(Message::TaskMessage(
+                            task::Message::OpenModal(task::Modal::NewTask)
+                        ))],
+                        app.tasks_controller.view().map(Message::TaskMessage),
+                    ]
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .spacing(4)
+                };
 
-        self.tasks_controller
-            .modal_view()
-            .map(|v| {
-                modal(
-                    base_content(),
-                    v.map(Message::TaskMessage),
-                    Message::TaskMessage(task::Message::CloseModal),
-                )
-            })
-            .unwrap_or(base_content().into())
-    }
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self {
-            config: Default::default(),
-            tasks_controller: task::ViewController::new(),
+                app.tasks_controller
+                    .modal_view()
+                    .map(|v| {
+                        modal(
+                            base_content(),
+                            v.map(Message::TaskMessage),
+                            Message::TaskMessage(task::Message::CloseModal),
+                        )
+                    })
+                    .unwrap_or(base_content().into())
+            }
         }
     }
 }
@@ -155,7 +163,7 @@ async fn setup_app_dirs() -> Result<(), String> {
 async fn setup_db_connection() -> Result<Pool<Sqlite>, String> {
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let data_dir = dirs.data_dir().join(APP_DIR);
-    let db_file = data_dir.join("tasks.db");
+    let db_file = data_dir.join(DB_NAME);
     let db_url = db_file
         .to_str()
         .map(|s| format!("sqlite://{}", s))
