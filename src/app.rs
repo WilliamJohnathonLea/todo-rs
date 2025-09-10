@@ -18,10 +18,7 @@ const DB_NAME: &str = "tasks.db";
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    NoOp,
-    ConfigLoaded(Result<Config, String>),
-    DbConnected(Result<Pool<Sqlite>, String>),
-    DbMigrated(Result<Pool<Sqlite>, String>),
+    Initialised(Pool<Sqlite>, Config),
     TaskMessage(task::Message),
     EventReceived(iced::Event),
 }
@@ -53,11 +50,10 @@ impl App {
     pub fn new() -> (Self, Task<Message>) {
         (
             Self::Initiaising,
-            iced::Task::batch([
-                iced::Task::perform(setup_app_dirs(), |_| Message::NoOp),
-                // iced::Task::perform(setup_db_connection(), Message::DbConnected),
-                iced::Task::perform(load_config(), Message::ConfigLoaded),
-            ]),
+            iced::Task::perform(initialise_app(), |res| match res {
+                Ok((pool, config)) => Message::Initialised(pool, config),
+                Err(err) => panic!("failed to initialise app {err}"),
+            }),
         )
     }
 
@@ -67,36 +63,30 @@ impl App {
 
     pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
         match self {
-            App::Initiaising => iced::Task::none(),
+            App::Initiaising => self.update_initialising(msg),
             App::Initialised(app) => App::update_initialised(app, msg),
+        }
+    }
+
+    fn update_initialising(&mut self, msg: Message) -> iced::Task<Message> {
+        match msg {
+            Message::Initialised(pool, config) => {
+                let tasks_controller = task::ViewController::new(pool, config.lanes.clone());
+                *self = App::Initialised(Initialised {
+                    config,
+                    tasks_controller,
+                });
+                iced::Task::none()
+            }
+            Message::EventReceived(iced::Event::Window(iced::window::Event::CloseRequested)) => {
+                window::get_latest().and_then(window::close)
+            }
+            _ => iced::Task::none(),
         }
     }
 
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
-            Message::ConfigLoaded(config_result) => {
-                if let Ok(config) = config_result {
-                    app.config = config
-                }
-                app.tasks_controller.configure(&app.config);
-                iced::Task::none()
-            }
-            Message::DbConnected(db) => {
-                if let Ok(db) = db {
-                    iced::Task::perform(migrate_db(db), Message::DbMigrated)
-                } else {
-                    iced::Task::none()
-                }
-            }
-            Message::DbMigrated(db) => {
-                if let Ok(db) = db {
-                    iced::Task::perform(task::get_tasks(db), |res| {
-                        Message::TaskMessage(task::Message::TasksLoaded(res))
-                    })
-                } else {
-                    iced::Task::none()
-                }
-            }
             Message::TaskMessage(task_msg) => app
                 .tasks_controller
                 .update(task_msg)
@@ -110,7 +100,7 @@ impl App {
                     iced::Task::none()
                 }
             }
-            Message::NoOp => iced::Task::none(),
+            _ => iced::Task::none(),
         }
     }
 
@@ -150,12 +140,28 @@ async fn setup_app_dirs() -> Result<(), String> {
     let data_dir = dirs.data_dir().join(APP_DIR);
     let conf_dir = dirs.config_dir().join(APP_DIR);
 
-    let data = tokio::fs::create_dir(data_dir)
-        .map_err(|_| format!("Could not create data dir for app"))
-        .await;
-    let conf = tokio::fs::create_dir(conf_dir)
-        .map_err(|_| format!("Could not create config dir for app"))
-        .await;
+    let data_dir_exists = tokio::fs::try_exists(&data_dir)
+        .map_err(|_| format!("Could not check data dir existence"))
+        .await?;
+
+    let conf_dir_exists = tokio::fs::try_exists(&conf_dir)
+        .map_err(|_| format!("Could not check config dir existence"))
+        .await?;
+
+    let data = if data_dir_exists {
+        Ok(())
+    } else {
+        tokio::fs::create_dir(&data_dir)
+            .map_err(|_| format!("Could not create data dir for app"))
+            .await
+    };
+    let conf = if conf_dir_exists {
+        Ok(())
+    } else {
+        tokio::fs::create_dir(&conf_dir)
+            .map_err(|_| format!("Could not create config dir for app"))
+            .await
+    };
 
     data.and_then(|_| conf)
 }
@@ -210,4 +216,15 @@ async fn save_config(config: Config) -> Result<(), String> {
     tokio::fs::write(conf_file, serialized)
         .map_err(|err| format!("Error saving Config: {}", err))
         .await
+}
+
+async fn initialise_app() -> Result<(Pool<Sqlite>, Config), String> {
+    let pool = setup_app_dirs()
+        .and_then(|_| setup_db_connection())
+        .and_then(|pool| migrate_db(pool))
+        .await?;
+
+    let config = load_config().await?;
+
+    Ok((pool, config))
 }

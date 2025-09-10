@@ -6,7 +6,6 @@ use iced::futures::TryFutureExt;
 use iced::widget::{row, text_editor};
 use sqlx::{Pool, Sqlite};
 
-use crate::app;
 use crate::layout::{swim_lane, task_card, task_dialog, task_dialog_mut};
 
 #[derive(Clone, Debug, Default)]
@@ -97,11 +96,6 @@ impl ViewController {
         {
             self.tasks.remove(pos);
         }
-    }
-
-    pub fn configure(&mut self, conf: &app::Config) {
-        let lanes = conf.lanes.clone();
-        self.lanes = lanes;
     }
 
     pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
