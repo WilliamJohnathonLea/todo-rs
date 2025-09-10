@@ -15,6 +15,7 @@ const DONE: &str = "Done";
 
 const APP_DIR: &str = "todo_rs";
 const DB_NAME: &str = "tasks.db";
+const CONFIG_FILE: &str = "config.toml";
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -136,6 +137,7 @@ impl App {
 }
 
 async fn setup_app_dirs() -> Result<(), String> {
+    println!("Setting up app directories");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let data_dir = dirs.data_dir().join(APP_DIR);
     let conf_dir = dirs.config_dir().join(APP_DIR);
@@ -143,11 +145,6 @@ async fn setup_app_dirs() -> Result<(), String> {
     let data_dir_exists = tokio::fs::try_exists(&data_dir)
         .map_err(|_| format!("Could not check data dir existence"))
         .await?;
-
-    let conf_dir_exists = tokio::fs::try_exists(&conf_dir)
-        .map_err(|_| format!("Could not check config dir existence"))
-        .await?;
-
     let data = if data_dir_exists {
         Ok(())
     } else {
@@ -155,6 +152,10 @@ async fn setup_app_dirs() -> Result<(), String> {
             .map_err(|_| format!("Could not create data dir for app"))
             .await
     };
+
+    let conf_dir_exists = tokio::fs::try_exists(&conf_dir)
+        .map_err(|_| format!("Could not check config dir existence"))
+        .await?;
     let conf = if conf_dir_exists {
         Ok(())
     } else {
@@ -167,6 +168,7 @@ async fn setup_app_dirs() -> Result<(), String> {
 }
 
 async fn setup_db_connection() -> Result<Pool<Sqlite>, String> {
+    println!("Setting up database connection");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let data_dir = dirs.data_dir().join(APP_DIR);
     let db_file = data_dir.join(DB_NAME);
@@ -192,6 +194,7 @@ async fn setup_db_connection() -> Result<Pool<Sqlite>, String> {
 }
 
 async fn migrate_db(pool: Pool<Sqlite>) -> Result<Pool<Sqlite>, String> {
+    println!("Migrating db");
     sqlx::migrate!()
         .run(&pool)
         .map_err(|_| String::from("failed to run migration"))
@@ -200,17 +203,23 @@ async fn migrate_db(pool: Pool<Sqlite>) -> Result<Pool<Sqlite>, String> {
 }
 
 async fn load_config() -> Result<Config, String> {
+    println!("Loading config");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
-    let conf_file = dirs.config_dir().join("todo_rs/config.toml");
+    let conf_file = dirs
+        .config_dir()
+        .join(format!("{}/{}", APP_DIR, CONFIG_FILE));
     let contents = tokio::fs::read(conf_file)
-        .map_err(|err| err.to_string())
+        .map_err(|err| format!("Unable to load config: {err}"))
         .await?;
-    toml::from_slice(&contents).map_err(|err| err.to_string())
+    toml::from_slice(&contents).map_err(|err| format!("Unable to parse config: {err}"))
 }
 
 async fn save_config(config: Config) -> Result<(), String> {
+    println!("Saving config");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
-    let conf_file = dirs.config_dir().join("todo_rs/config.toml");
+    let conf_file = dirs
+        .config_dir()
+        .join(format!("{}/{}", APP_DIR, CONFIG_FILE));
     let serialized = toml::to_string_pretty(&config)
         .map_err(|err| format!("Config serialization error: {}", err))?;
     tokio::fs::write(conf_file, serialized)
@@ -224,7 +233,8 @@ async fn initialise_app() -> Result<(Pool<Sqlite>, Config), String> {
         .and_then(|pool| migrate_db(pool))
         .await?;
 
-    let config = load_config().await?;
-
-    Ok((pool, config))
+    match load_config().await {
+        Ok(config) => Ok((pool, config)),
+        Err(_) => Ok((pool, Default::default())),
+    }
 }
