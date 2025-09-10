@@ -72,12 +72,15 @@ impl App {
     fn update_initialising(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::Initialised(pool, config) => {
-                let tasks_controller = task::ViewController::new(pool, config.lanes.clone());
+                let tasks_controller =
+                    task::ViewController::new(pool.clone(), config.lanes.clone());
                 *self = App::Initialised(Initialised {
                     config,
                     tasks_controller,
                 });
-                iced::Task::none()
+                iced::Task::perform(task::get_tasks(pool), |res| {
+                    Message::TaskMessage(task::Message::TasksLoaded(res))
+                })
             }
             Message::EventReceived(iced::Event::Window(iced::window::Event::CloseRequested)) => {
                 window::get_latest().and_then(window::close)
