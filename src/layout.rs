@@ -134,7 +134,11 @@ where
             .width(Length::Fill),
         container(row![edit_button, close_button].spacing(4)).align_x(Horizontal::Right)
     ];
-    let content = column![title_row, text(&task.description)];
+    let content = if let Some(desc) = &task.description {
+        column![title_row, text(desc)]
+    } else {
+        column![title_row]
+    };
     container(content)
         .style(container::bordered_box)
         .padding([16, 16])

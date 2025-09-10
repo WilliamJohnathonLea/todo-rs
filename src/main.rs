@@ -8,6 +8,7 @@ fn main() -> iced::Result {
     iced::application("ToDo", App::update, App::view)
         .subscription(App::subscription)
         .theme(|_| iced::Theme::KanagawaDragon)
+        .centered()
         .exit_on_close_request(false)
         .run_with(App::new)
 }
