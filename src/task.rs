@@ -25,15 +25,15 @@ struct NewTask {
 
 #[derive(Clone, Debug)]
 pub enum Message {
-    MoveToLane(String, i64),
-    RemoveTask(i64),
     TasksLoaded(Result<Vec<Task>, String>),
     CreateTask,
     EditTask(i64),
-    TaskTitleUpdated(String),
-    TaskDescUpdated(text_editor::Action),
+    RemoveTask(i64),
+    MoveToLane(String, i64),
     OpenModal(Modal),
     CloseModal,
+    TaskTitleUpdated(String),
+    TaskDescUpdated(text_editor::Action),
     NoOp,
 }
 
@@ -91,24 +91,9 @@ impl ViewController {
 
     pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
-            Message::MoveToLane(new_lane, task_id) => {
-                if let Some(task) = self.find_task_by_id_mut(task_id) {
-                    task.lane = new_lane;
-                }
-                iced::Task::none()
-            }
-            Message::RemoveTask(task_id) => {
-                iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
-                    iced::Task::perform(get_tasks(self.db.clone()), Message::TasksLoaded),
-                )
-            }
             Message::TasksLoaded(tasks) => {
-                match tasks {
-                    Ok(tasks) => {
-                        println!("loaded {} tasks", tasks.len());
-                        self.tasks = tasks
-                    }
-                    Err(err) => println!("{err}"),
+                if let Ok(tasks) = tasks {
+                    self.tasks = tasks
                 }
                 iced::Task::none()
             }
@@ -129,11 +114,28 @@ impl ViewController {
             Message::EditTask(task_id) => {
                 let title = self.new_task_title.clone();
                 let desc = self.new_task_description.text();
+                let db = self.db.clone();
                 if let Some(task) = self.find_task_by_id_mut(task_id) {
                     task.title = title;
                     task.description = Some(desc);
+                    iced::Task::perform(edit_task(db, task.clone()), |_| Message::CloseModal)
+                } else {
+                    iced::Task::done(Message::CloseModal)
                 }
-                iced::Task::done(Message::CloseModal) // TODO: Perform a db edit and then close the modal
+            }
+            Message::RemoveTask(task_id) => {
+                iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
+                    iced::Task::perform(get_tasks(self.db.clone()), Message::TasksLoaded),
+                )
+            }
+            Message::MoveToLane(new_lane, task_id) => {
+                let db = self.db.clone();
+                if let Some(task) = self.find_task_by_id_mut(task_id) {
+                    task.lane = new_lane;
+                    iced::Task::perform(edit_task(db, task.clone()), |_| Message::NoOp)
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::OpenModal(modal) => {
                 if let Modal::EditTask(task_id) = modal {
@@ -257,4 +259,18 @@ async fn remove_task(pool: Pool<Sqlite>, task_id: i64) -> Result<(), String> {
         .map_err(|_| "Error deleting task from db".into())
         .map_ok(|_| ())
         .await
+}
+
+async fn edit_task(pool: Pool<Sqlite>, task: Task) -> Result<(), String> {
+    sqlx::query!(
+        "UPDATE tasks SET title = ?, description = ?, lane = ? WHERE id = ?",
+        task.title,
+        task.description,
+        task.lane,
+        task.id
+    )
+    .execute(&pool)
+    .map_err(|_| "Error deleting task from db".into())
+    .map_ok(|_| ())
+    .await
 }
