@@ -26,7 +26,7 @@ struct NewTask {
 #[derive(Clone, Debug)]
 pub enum Message {
     MoveToLane(String, i64),
-    RemoveTask(String, i64),
+    RemoveTask(i64),
     TasksLoaded(Result<Vec<Task>, String>),
     CreateTask,
     EditTask(i64),
@@ -34,6 +34,7 @@ pub enum Message {
     TaskDescUpdated(text_editor::Action),
     OpenModal(Modal),
     CloseModal,
+    NoOp,
 }
 
 #[derive(Clone, Debug)]
@@ -88,16 +89,6 @@ impl ViewController {
         self.tasks.iter_mut().find(|task| task.id == id)
     }
 
-    fn remove_task(&mut self, lane: String, task_id: i64) {
-        if let Some(pos) = self
-            .tasks
-            .iter()
-            .position(|t| t.lane == lane && t.id == task_id)
-        {
-            self.tasks.remove(pos);
-        }
-    }
-
     pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::MoveToLane(new_lane, task_id) => {
@@ -106,9 +97,10 @@ impl ViewController {
                 }
                 iced::Task::none()
             }
-            Message::RemoveTask(lane, task_id) => {
-                self.remove_task(lane, task_id);
-                iced::Task::none()
+            Message::RemoveTask(task_id) => {
+                iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
+                    iced::Task::perform(get_tasks(self.db.clone()), Message::TasksLoaded),
+                )
             }
             Message::TasksLoaded(tasks) => {
                 match tasks {
@@ -125,12 +117,11 @@ impl ViewController {
                 let desc = Some(self.new_task_description.text());
                 if let Some(lane) = self.lanes.get(0) {
                     let task = NewTask::new(title, desc, lane.clone());
-                    iced::Task::batch([
-                        iced::Task::perform(insert_task(self.db.clone(), task), |_| {
-                            Message::CloseModal
-                        }),
-                        iced::Task::perform(get_tasks(self.db.clone()), Message::TasksLoaded),
-                    ])
+                    iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
+                        .chain(iced::Task::perform(
+                            get_tasks(self.db.clone()),
+                            Message::TasksLoaded,
+                        ))
                 } else {
                     iced::Task::none()
                 }
@@ -169,6 +160,7 @@ impl ViewController {
                 self.new_task_description.perform(action);
                 iced::Task::none()
             }
+            Message::NoOp => iced::Task::none(),
         }
     }
 
@@ -190,7 +182,7 @@ impl ViewController {
                         .map(|lane| Message::MoveToLane(lane.clone(), t.id));
                     task_card(
                         t,
-                        Message::RemoveTask(t.lane.clone(), t.id),
+                        Message::RemoveTask(t.id),
                         Message::OpenModal(Modal::ViewTask(t.id)),
                         next_lane,
                     )
@@ -257,4 +249,12 @@ async fn insert_task(pool: Pool<Sqlite>, t: NewTask) -> Result<(), String> {
     .map_err(|_| "Error inserting task into db".into())
     .map_ok(|_| ())
     .await
+}
+
+async fn remove_task(pool: Pool<Sqlite>, task_id: i64) -> Result<(), String> {
+    sqlx::query!("DELETE FROM tasks WHERE id = ?", task_id)
+        .execute(&pool)
+        .map_err(|_| "Error deleting task from db".into())
+        .map_ok(|_| ())
+        .await
 }
