@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use std::vec;
 
-use iced::Element;
 use iced::futures::TryFutureExt;
-use iced::widget::{row, text_editor};
+use iced::widget::{button, column, row, text_editor};
+use iced::{Element, Length};
 use sqlx::{Pool, Sqlite};
 
-use crate::layout::{swim_lane, task_card, task_dialog, task_dialog_mut};
+use crate::layout::{modal, swim_lane, task_card, task_dialog, task_dialog_mut};
+use crate::view_controller::ViewController as VC;
 
 #[derive(Clone, Debug, Default)]
 pub struct Task {
@@ -89,7 +90,45 @@ impl ViewController {
         self.tasks.iter_mut().find(|task| task.id == id)
     }
 
-    pub fn update(&mut self, msg: Message) -> iced::Task<Message> {
+    fn modal_view(&self) -> Option<Element<Message>> {
+        match self.modal {
+            Some(Modal::ViewTask(task_id)) => {
+                let maybe_task = self.find_task_by_id(task_id);
+                maybe_task.map(|t| {
+                    task_dialog(
+                        t,
+                        Message::OpenModal(Modal::EditTask(t.id)),
+                        Message::CloseModal,
+                    )
+                })
+            }
+            Some(Modal::NewTask) => Some(task_dialog_mut(
+                "New Task".into(),
+                &self.new_task_title,
+                &self.new_task_description,
+                &Message::TaskTitleUpdated,
+                &Message::TaskDescUpdated,
+                Message::CreateTask,
+                Message::CloseModal,
+            )),
+            Some(Modal::EditTask(task_id)) => Some(task_dialog_mut(
+                "Edit Task".into(),
+                &self.new_task_title,
+                &self.new_task_description,
+                &Message::TaskTitleUpdated,
+                &Message::TaskDescUpdated,
+                Message::EditTask(task_id),
+                Message::CloseModal,
+            )),
+            None => None,
+        }
+    }
+}
+
+impl VC for ViewController {
+    type Message = Message;
+
+    fn update(&mut self, msg: Self::Message) -> iced::Task<Self::Message> {
         match msg {
             Message::TasksLoaded(tasks) => {
                 if let Ok(tasks) = tasks {
@@ -166,7 +205,7 @@ impl ViewController {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    fn view(&self) -> iced::Element<Self::Message> {
         let mut grouped_by_lane: HashMap<&str, Vec<&Task>> = HashMap::new();
 
         for task in &self.tasks {
@@ -195,40 +234,21 @@ impl ViewController {
             swim_lane(title, elems)
         });
 
-        row(lanes).spacing(24).into()
-    }
+        let base_content = column![
+            row![
+                button("Backlog"),
+                button("Add Task").on_press(Message::OpenModal(Modal::NewTask))
+            ],
+            row(lanes).spacing(24),
+        ]
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .spacing(4);
 
-    pub fn modal_view(&self) -> Option<Element<Message>> {
-        match self.modal {
-            Some(Modal::ViewTask(task_id)) => {
-                let maybe_task = self.find_task_by_id(task_id);
-                maybe_task.map(|t| {
-                    task_dialog(
-                        t,
-                        Message::OpenModal(Modal::EditTask(t.id)),
-                        Message::CloseModal,
-                    )
-                })
-            }
-            Some(Modal::NewTask) => Some(task_dialog_mut(
-                "New Task".into(),
-                &self.new_task_title,
-                &self.new_task_description,
-                &Message::TaskTitleUpdated,
-                &Message::TaskDescUpdated,
-                Message::CreateTask,
-                Message::CloseModal,
-            )),
-            Some(Modal::EditTask(task_id)) => Some(task_dialog_mut(
-                "Edit Task".into(),
-                &self.new_task_title,
-                &self.new_task_description,
-                &Message::TaskTitleUpdated,
-                &Message::TaskDescUpdated,
-                Message::EditTask(task_id),
-                Message::CloseModal,
-            )),
-            None => None,
+        if let Some(v) = self.modal_view() {
+            modal(base_content, v, Message::CloseModal)
+        } else {
+            base_content.into()
         }
     }
 }

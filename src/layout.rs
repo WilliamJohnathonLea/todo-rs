@@ -1,8 +1,8 @@
 use crate::task::Task;
 use iced::alignment::Horizontal;
 use iced::widget::{
-    button, center, column, container, mouse_area, opaque, row, stack, text, text_editor,
-    text_input,
+    button, center, column, container, mouse_area, opaque, row, scrollable, stack, text,
+    text_editor, text_input,
 };
 use iced::{Color, Element, Length};
 
@@ -143,4 +143,11 @@ where
         .style(container::bordered_box)
         .padding([16, 16])
         .into()
+}
+
+pub fn backlog<'a, Message>(tasks: Vec<Element<'a, Message>>) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    scrollable(column(tasks)).into()
 }

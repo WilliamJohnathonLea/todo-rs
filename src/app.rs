@@ -1,13 +1,12 @@
 use directories::BaseDirs;
 use iced::futures::TryFutureExt;
-use iced::widget::{button, center, column, row, text};
-use iced::{Element, Length, Subscription, Task, window};
+use iced::widget::{center, text};
+use iced::{Element, Subscription, Task, window};
 use serde::{Deserialize, Serialize};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::{Pool, Sqlite, SqlitePool};
 
-use crate::layout::modal;
-use crate::task;
+use crate::{backlog, task, view_controller::ViewController};
 
 const TO_DO: &str = "To do";
 const IN_PROGRESS: &str = "In progress";
@@ -20,6 +19,7 @@ const CONFIG_FILE: &str = "config.toml";
 #[derive(Debug, Clone)]
 pub enum Message {
     Initialised(Pool<Sqlite>, Config),
+    BacklogMessage(backlog::Message),
     TaskMessage(task::Message),
     EventReceived(iced::Event),
 }
@@ -39,6 +39,7 @@ impl Default for Config {
 
 pub struct Initialised {
     config: Config,
+    backlog_controller: backlog::ViewController,
     tasks_controller: task::ViewController,
 }
 
@@ -74,8 +75,11 @@ impl App {
             Message::Initialised(pool, config) => {
                 let tasks_controller =
                     task::ViewController::new(pool.clone(), config.lanes.clone());
+                let backlog_controller = backlog::ViewController::new();
+
                 *self = App::Initialised(Initialised {
                     config,
+                    backlog_controller,
                     tasks_controller,
                 });
                 iced::Task::perform(task::get_tasks(pool), |res| {
@@ -95,6 +99,10 @@ impl App {
                 .tasks_controller
                 .update(task_msg)
                 .map(Message::TaskMessage),
+            Message::BacklogMessage(backlog_msg) => app
+                .backlog_controller
+                .update(backlog_msg)
+                .map(Message::BacklogMessage),
             Message::EventReceived(event) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
                     iced::Task::future(save_config(app.config.clone()))
@@ -111,36 +119,12 @@ impl App {
     pub fn view(&self) -> Element<Message> {
         match self {
             App::Initiaising => center(text("Loading...")).into(),
-            App::Initialised(app) => {
-                let base_content = || {
-                    column![
-                        row![button("Add Task").on_press(Message::TaskMessage(
-                            task::Message::OpenModal(task::Modal::NewTask)
-                        ))],
-                        app.tasks_controller.view().map(Message::TaskMessage),
-                    ]
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .spacing(4)
-                };
-
-                app.tasks_controller
-                    .modal_view()
-                    .map(|v| {
-                        modal(
-                            base_content(),
-                            v.map(Message::TaskMessage),
-                            Message::TaskMessage(task::Message::CloseModal),
-                        )
-                    })
-                    .unwrap_or(base_content().into())
-            }
+            App::Initialised(app) => app.tasks_controller.view().map(Message::TaskMessage),
         }
     }
 }
 
 async fn setup_app_dirs() -> Result<(), String> {
-    println!("Setting up app directories");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let data_dir = dirs.data_dir().join(APP_DIR);
     let conf_dir = dirs.config_dir().join(APP_DIR);
@@ -171,7 +155,6 @@ async fn setup_app_dirs() -> Result<(), String> {
 }
 
 async fn setup_db_connection() -> Result<Pool<Sqlite>, String> {
-    println!("Setting up database connection");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let data_dir = dirs.data_dir().join(APP_DIR);
     let db_file = data_dir.join(DB_NAME);
@@ -197,7 +180,6 @@ async fn setup_db_connection() -> Result<Pool<Sqlite>, String> {
 }
 
 async fn migrate_db(pool: Pool<Sqlite>) -> Result<Pool<Sqlite>, String> {
-    println!("Migrating db");
     sqlx::migrate!()
         .run(&pool)
         .map_err(|_| String::from("failed to run migration"))
@@ -206,7 +188,6 @@ async fn migrate_db(pool: Pool<Sqlite>) -> Result<Pool<Sqlite>, String> {
 }
 
 async fn load_config() -> Result<Config, String> {
-    println!("Loading config");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let conf_file = dirs
         .config_dir()
@@ -218,7 +199,6 @@ async fn load_config() -> Result<Config, String> {
 }
 
 async fn save_config(config: Config) -> Result<(), String> {
-    println!("Saving config");
     let dirs = BaseDirs::new().ok_or("Could not get directories")?;
     let conf_file = dirs
         .config_dir()
