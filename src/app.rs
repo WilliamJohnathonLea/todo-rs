@@ -39,6 +39,7 @@ impl Default for Config {
 
 pub struct Initialised {
     config: Config,
+    db: Pool<Sqlite>,
     backlog_controller: backlog::ViewController,
     tasks_controller: task::ViewController,
     current_view: View,
@@ -85,6 +86,7 @@ impl App {
 
                 *self = App::Initialised(Initialised {
                     config,
+                    db: pool.clone(),
                     backlog_controller,
                     tasks_controller,
                     current_view: View::Sprint,
@@ -104,7 +106,9 @@ impl App {
         match msg {
             Message::TaskMessage(task::Message::OpenBacklog) => {
                 app.current_view = View::Backlog;
-                iced::Task::none()
+                iced::Task::perform(backlog::get_tasks(app.db.clone()), |res| {
+                    Message::BacklogMessage(backlog::Message::TasksLoaded(res))
+                })
             }
             Message::TaskMessage(task_msg) => app
                 .tasks_controller
@@ -114,10 +118,10 @@ impl App {
                 app.current_view = View::Sprint;
                 iced::Task::none()
             }
-            // Message::BacklogMessage(backlog_msg) => app
-            //     .backlog_controller
-            //     .update(backlog_msg)
-            //     .map(Message::BacklogMessage),
+            Message::BacklogMessage(backlog_msg) => app
+                .backlog_controller
+                .update(backlog_msg)
+                .map(Message::BacklogMessage),
             Message::EventReceived(event) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
                     iced::Task::future(save_config(app.config.clone()))

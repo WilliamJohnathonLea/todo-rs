@@ -257,18 +257,22 @@ impl VC for ViewController {
 }
 
 pub async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
-    sqlx::query_as!(Task, "SELECT id, title, description, lane FROM tasks")
-        .fetch_all(&pool)
-        .map_err(|err| format!("got db err: {err}"))
-        .await
+    sqlx::query_as!(
+        Task,
+        "SELECT id, title, description, lane FROM tasks WHERE NOT in_backlog"
+    )
+    .fetch_all(&pool)
+    .map_err(|err| format!("got db err: {err}"))
+    .await
 }
 
 async fn insert_task(pool: Pool<Sqlite>, t: NewTask) -> Result<(), String> {
     sqlx::query!(
-        "INSERT INTO tasks (title, description, lane) VALUES (?, ?, ?)",
+        "INSERT INTO tasks (title, description, lane, in_backlog) VALUES (?, ?, ?, ?)",
         t.title,
         t.description,
-        t.lane
+        t.lane,
+        false,
     )
     .execute(&pool)
     .map_err(|_| "Error inserting task into db".into())
