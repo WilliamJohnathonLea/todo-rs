@@ -35,6 +35,7 @@ pub enum Message {
     CloseModal,
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
+    OpenBacklog,
     NoOp,
 }
 
@@ -201,6 +202,7 @@ impl VC for ViewController {
                 self.new_task_description.perform(action);
                 iced::Task::none()
             }
+            Message::OpenBacklog => iced::Task::none(), // Handled at the App level
             Message::NoOp => iced::Task::none(),
         }
     }
@@ -236,9 +238,10 @@ impl VC for ViewController {
 
         let base_content = column![
             row![
-                button("Backlog"),
+                button("Backlog").on_press(Message::OpenBacklog),
                 button("Add Task").on_press(Message::OpenModal(Modal::NewTask))
-            ],
+            ]
+            .spacing(4),
             row(lanes).spacing(24),
         ]
         .width(Length::Fill)

@@ -41,6 +41,12 @@ pub struct Initialised {
     config: Config,
     backlog_controller: backlog::ViewController,
     tasks_controller: task::ViewController,
+    current_view: View,
+}
+
+pub enum View {
+    Backlog,
+    Sprint,
 }
 
 pub enum App {
@@ -81,6 +87,7 @@ impl App {
                     config,
                     backlog_controller,
                     tasks_controller,
+                    current_view: View::Sprint,
                 });
                 iced::Task::perform(task::get_tasks(pool), |res| {
                     Message::TaskMessage(task::Message::TasksLoaded(res))
@@ -95,14 +102,22 @@ impl App {
 
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
+            Message::TaskMessage(task::Message::OpenBacklog) => {
+                app.current_view = View::Backlog;
+                iced::Task::none()
+            }
             Message::TaskMessage(task_msg) => app
                 .tasks_controller
                 .update(task_msg)
                 .map(Message::TaskMessage),
-            Message::BacklogMessage(backlog_msg) => app
-                .backlog_controller
-                .update(backlog_msg)
-                .map(Message::BacklogMessage),
+            Message::BacklogMessage(backlog::Message::OpenSprint) => {
+                app.current_view = View::Sprint;
+                iced::Task::none()
+            }
+            // Message::BacklogMessage(backlog_msg) => app
+            //     .backlog_controller
+            //     .update(backlog_msg)
+            //     .map(Message::BacklogMessage),
             Message::EventReceived(event) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
                     iced::Task::future(save_config(app.config.clone()))
@@ -119,7 +134,10 @@ impl App {
     pub fn view(&self) -> Element<Message> {
         match self {
             App::Initiaising => center(text("Loading...")).into(),
-            App::Initialised(app) => app.tasks_controller.view().map(Message::TaskMessage),
+            App::Initialised(app) => match app.current_view {
+                View::Backlog => app.backlog_controller.view().map(Message::BacklogMessage),
+                View::Sprint => app.tasks_controller.view().map(Message::TaskMessage),
+            },
         }
     }
 }
