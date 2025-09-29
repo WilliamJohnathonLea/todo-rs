@@ -149,5 +149,8 @@ pub fn backlog<'a, Message>(tasks: Vec<Element<'a, Message>>) -> Element<'a, Mes
 where
     Message: Clone + 'a,
 {
-    scrollable(column(tasks)).into()
+    scrollable(column(tasks).spacing(4))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
 }
