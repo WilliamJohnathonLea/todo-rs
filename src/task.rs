@@ -66,15 +66,18 @@ impl NewTask {
 }
 
 impl ViewController {
-    pub fn new(db: Pool<Sqlite>, lanes: Vec<String>) -> Self {
-        Self {
-            modal: None,
-            db,
-            lanes,
-            tasks: vec![],
-            new_task_title: Default::default(),
-            new_task_description: Default::default(),
-        }
+    pub fn new(db: Pool<Sqlite>, lanes: Vec<String>) -> (Self, iced::Task<Message>) {
+        (
+            Self {
+                modal: None,
+                db: db.clone(),
+                lanes,
+                tasks: vec![],
+                new_task_title: Default::default(),
+                new_task_description: Default::default(),
+            },
+            iced::Task::perform(get_tasks(db), Message::TasksLoaded),
+        )
     }
 
     fn hide_dialog(&mut self) {
@@ -256,7 +259,7 @@ impl VC for ViewController {
     }
 }
 
-pub async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
+async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
     sqlx::query_as!(
         Task,
         "SELECT id, title, description, lane FROM tasks WHERE NOT in_backlog"

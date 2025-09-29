@@ -18,8 +18,11 @@ pub struct ViewController {
 }
 
 impl ViewController {
-    pub fn new() -> Self {
-        ViewController { tasks: vec![] }
+    pub fn new(db: Pool<Sqlite>) -> (Self, iced::Task<Message>) {
+        (
+            ViewController { tasks: vec![] },
+            iced::Task::perform(get_tasks(db), Message::TasksLoaded),
+        )
     }
 }
 
@@ -56,7 +59,7 @@ impl VC for ViewController {
     }
 }
 
-pub async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
+async fn get_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
     sqlx::query_as!(
         Task,
         "SELECT id, title, description, lane FROM tasks WHERE in_backlog"
