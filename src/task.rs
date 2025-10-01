@@ -18,10 +18,10 @@ pub struct Task {
 }
 
 #[derive(Clone, Debug, Default)]
-struct NewTask {
-    title: String,
-    description: Option<String>,
-    lane: String,
+pub struct NewTask {
+    pub title: String,
+    pub description: Option<String>,
+    pub lane: String,
 }
 
 #[derive(Clone, Debug)]

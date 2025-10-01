@@ -80,18 +80,23 @@ impl App {
     fn update_initialising(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::Initialised(pool, config) => {
-                let (tasks_controller, task) =
-                    task::ViewController::new(pool.clone(), config.lanes.clone());
-                let (backlog_controller, _) = backlog::ViewController::new(pool.clone());
+                if let Some(initial_lane) = config.lanes.get(0) {
+                    let (tasks_controller, task) =
+                        task::ViewController::new(pool.clone(), config.lanes.clone());
+                    let (backlog_controller, _) =
+                        backlog::ViewController::new(pool.clone(), initial_lane.to_owned());
 
-                *self = App::Initialised(Initialised {
-                    config,
-                    db: pool.clone(),
-                    backlog_controller,
-                    tasks_controller,
-                    current_view: View::Sprint,
-                });
-                task.map(Message::TaskMessage)
+                    *self = App::Initialised(Initialised {
+                        config,
+                        db: pool.clone(),
+                        backlog_controller,
+                        tasks_controller,
+                        current_view: View::Sprint,
+                    });
+                    task.map(Message::TaskMessage)
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::EventReceived(iced::Event::Window(iced::window::Event::CloseRequested)) => {
                 window::get_latest().and_then(window::close)
@@ -103,10 +108,15 @@ impl App {
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::TaskMessage(task::Message::OpenBacklog) => {
-                let (backlog_controller, task) = backlog::ViewController::new(app.db.clone());
-                app.current_view = View::Backlog;
-                app.backlog_controller = backlog_controller;
-                task.map(Message::BacklogMessage)
+                if let Some(initial_lane) = app.config.lanes.get(0) {
+                    let (backlog_controller, task) =
+                        backlog::ViewController::new(app.db.clone(), initial_lane.to_owned());
+                    app.current_view = View::Backlog;
+                    app.backlog_controller = backlog_controller;
+                    task.map(Message::BacklogMessage)
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::TaskMessage(task_msg) => app
                 .tasks_controller
