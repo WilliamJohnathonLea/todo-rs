@@ -175,8 +175,11 @@ impl VC for ViewController {
         }
 
         let base_content = column![
-            button("Sprint").on_press(Message::OpenSprint),
-            button("Add Task").on_press(Message::OpenModal(Modal::NewTask)),
+            row![
+                button("Sprint").on_press(Message::OpenSprint),
+                button("Add Task").on_press(Message::OpenModal(Modal::NewTask)),
+            ]
+            .spacing(4),
             text("Backlog").size(24),
             backlog(task_views)
         ]
