@@ -1,46 +1,50 @@
-use crate::layout::{backlog, modal, task_dialog, task_dialog_mut};
-use crate::task::*;
-use crate::view_controller::ViewController as VC;
+use std::collections::HashMap;
+use std::vec;
 
-use iced::widget::{button, column, container, horizontal_space, row, text, text_editor};
+use iced::widget::{button, column, row, text_editor};
 use iced::{Element, Length};
 use sqlx::{Pool, Sqlite};
 
+use crate::layout::{modal, swim_lane, task_card, task_dialog, task_dialog_mut};
+use crate::task::*;
+use crate::view_controller::ViewController as VC;
+
 #[derive(Clone, Debug)]
 pub enum Message {
-    OpenSprint,
     TasksLoaded(Result<Vec<Task>, String>),
     CreateTask,
     EditTask(i64),
     RemoveTask(i64),
-    TaskTitleUpdated(String),
-    TaskDescUpdated(text_editor::Action),
+    MoveToLane(String, i64),
     OpenModal(Modal),
     CloseModal,
+    TaskTitleUpdated(String),
+    TaskDescUpdated(text_editor::Action),
+    OpenBacklog,
     NoOp,
 }
 
 pub struct ViewController {
     modal: Option<Modal>,
     db: Pool<Sqlite>,
+    lanes: Vec<String>,
     tasks: Vec<Task>,
-    initial_lane: String,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
 
 impl ViewController {
-    pub fn new(db: Pool<Sqlite>, initial_lane: String) -> (Self, iced::Task<Message>) {
+    pub fn new(db: Pool<Sqlite>, lanes: Vec<String>) -> (Self, iced::Task<Message>) {
         (
-            ViewController {
+            Self {
                 modal: None,
                 db: db.clone(),
+                lanes,
                 tasks: vec![],
-                initial_lane,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
-            iced::Task::perform(get_backlog_tasks(db), Message::TasksLoaded),
+            iced::Task::perform(get_sprint_tasks(db), Message::TasksLoaded),
         )
     }
 
@@ -98,23 +102,26 @@ impl VC for ViewController {
 
     fn update(&mut self, msg: Self::Message) -> iced::Task<Self::Message> {
         match msg {
-            Message::OpenSprint => iced::Task::none(), // Handled at the App level
-            Message::TasksLoaded(result) => {
-                if let Ok(tasks) = result {
-                    self.tasks = tasks;
+            Message::TasksLoaded(tasks) => {
+                if let Ok(tasks) = tasks {
+                    self.tasks = tasks
                 }
                 iced::Task::none()
             }
             Message::CreateTask => {
                 let title = self.new_task_title.clone();
                 let desc = Some(self.new_task_description.text());
-                let in_backlog = true;
-                let task = NewTask::new(title, desc, self.initial_lane.clone(), in_backlog);
-                iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
-                    .chain(iced::Task::perform(
-                        get_backlog_tasks(self.db.clone()),
-                        Message::TasksLoaded,
-                    ))
+                if let Some(lane) = self.lanes.get(0) {
+                    let in_backlog = false;
+                    let task = NewTask::new(title, desc, lane.clone(), in_backlog);
+                    iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
+                        .chain(iced::Task::perform(
+                            get_sprint_tasks(self.db.clone()),
+                            Message::TasksLoaded,
+                        ))
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::EditTask(task_id) => {
                 let title = self.new_task_title.clone();
@@ -130,16 +137,17 @@ impl VC for ViewController {
             }
             Message::RemoveTask(task_id) => {
                 iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
-                    iced::Task::perform(get_backlog_tasks(self.db.clone()), Message::TasksLoaded),
+                    iced::Task::perform(get_sprint_tasks(self.db.clone()), Message::TasksLoaded),
                 )
             }
-            Message::TaskTitleUpdated(task_text) => {
-                self.new_task_title = task_text;
-                iced::Task::none()
-            }
-            Message::TaskDescUpdated(action) => {
-                self.new_task_description.perform(action);
-                iced::Task::none()
+            Message::MoveToLane(new_lane, task_id) => {
+                let db = self.db.clone();
+                if let Some(task) = self.find_task_by_id_mut(task_id) {
+                    task.lane = new_lane;
+                    iced::Task::perform(edit_task(db, task.clone()), |_| Message::NoOp)
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::OpenModal(modal) => {
                 if let Modal::EditTask(task_id) = modal {
@@ -158,30 +166,55 @@ impl VC for ViewController {
                 self.hide_dialog();
                 iced::Task::none()
             }
+            Message::TaskTitleUpdated(task_text) => {
+                self.new_task_title = task_text;
+                iced::Task::none()
+            }
+            Message::TaskDescUpdated(action) => {
+                self.new_task_description.perform(action);
+                iced::Task::none()
+            }
+            Message::OpenBacklog => iced::Task::none(), // Handled at the App level
             Message::NoOp => iced::Task::none(),
         }
     }
 
     fn view(&self) -> iced::Element<Self::Message> {
-        let mut task_views = vec![];
-        for task in self.tasks.iter() {
-            let item = container(row![
-                text(format!("{}: {}", task.id, task.title)),
-                horizontal_space(),
-                button("X").on_press(Message::RemoveTask(task.id))
-            ])
-            .style(container::bordered_box);
-            task_views.push(item.into());
+        let mut grouped_by_lane: HashMap<&str, Vec<&Task>> = HashMap::new();
+
+        for task in &self.tasks {
+            grouped_by_lane.entry(&task.lane).or_default().push(task);
         }
+
+        let lanes = self.lanes.iter().enumerate().map(|(idx, lane)| {
+            let tasks = grouped_by_lane.remove(lane.as_str()).unwrap_or_default();
+            let elems = tasks
+                .iter()
+                .map(|t| {
+                    let next_lane = self
+                        .lanes
+                        .get(idx + 1)
+                        .map(|lane| Message::MoveToLane(lane.clone(), t.id));
+                    task_card(
+                        t,
+                        Message::RemoveTask(t.id),
+                        Message::OpenModal(Modal::ViewTask(t.id)),
+                        next_lane,
+                    )
+                })
+                .collect();
+
+            let title = format!("{} ({})", lane, tasks.len());
+            swim_lane(title, elems)
+        });
 
         let base_content = column![
             row![
-                button("Sprint").on_press(Message::OpenSprint),
-                button("Add Task").on_press(Message::OpenModal(Modal::NewTask)),
+                button("Backlog").on_press(Message::OpenBacklog),
+                button("Add Task").on_press(Message::OpenModal(Modal::NewTask))
             ]
             .spacing(4),
-            text("Backlog").size(24),
-            backlog(task_views)
+            row(lanes).spacing(24),
         ]
         .width(Length::Fill)
         .height(Length::Fill)

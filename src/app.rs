@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::{Pool, Sqlite, SqlitePool};
 
-use crate::{backlog, task, view_controller::ViewController};
+use crate::{backlog, sprint, view_controller::ViewController};
 
 const TO_DO: &str = "To do";
 const IN_PROGRESS: &str = "In progress";
@@ -20,7 +20,7 @@ const CONFIG_FILE: &str = "config.toml";
 pub enum Message {
     Initialised(Pool<Sqlite>, Config),
     BacklogMessage(backlog::Message),
-    TaskMessage(task::Message),
+    TaskMessage(sprint::Message),
     EventReceived(iced::Event),
 }
 
@@ -41,7 +41,7 @@ pub struct Initialised {
     config: Config,
     db: Pool<Sqlite>,
     backlog_controller: backlog::ViewController,
-    tasks_controller: task::ViewController,
+    tasks_controller: sprint::ViewController,
     current_view: View,
 }
 
@@ -82,7 +82,7 @@ impl App {
             Message::Initialised(pool, config) => {
                 if let Some(initial_lane) = config.lanes.get(0) {
                     let (tasks_controller, task) =
-                        task::ViewController::new(pool.clone(), config.lanes.clone());
+                        sprint::ViewController::new(pool.clone(), config.lanes.clone());
                     let (backlog_controller, _) =
                         backlog::ViewController::new(pool.clone(), initial_lane.to_owned());
 
@@ -107,7 +107,7 @@ impl App {
 
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
-            Message::TaskMessage(task::Message::OpenBacklog) => {
+            Message::TaskMessage(sprint::Message::OpenBacklog) => {
                 if let Some(initial_lane) = app.config.lanes.get(0) {
                     let (backlog_controller, task) =
                         backlog::ViewController::new(app.db.clone(), initial_lane.to_owned());
@@ -124,7 +124,7 @@ impl App {
                 .map(Message::TaskMessage),
             Message::BacklogMessage(backlog::Message::OpenSprint) => {
                 let (tasks_controller, task) =
-                    task::ViewController::new(app.db.clone(), app.config.lanes.clone());
+                    sprint::ViewController::new(app.db.clone(), app.config.lanes.clone());
                 app.current_view = View::Sprint;
                 app.tasks_controller = tasks_controller;
                 task.map(Message::TaskMessage)
