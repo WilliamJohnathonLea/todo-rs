@@ -2,7 +2,9 @@ use crate::layout::{backlog, modal, task_dialog, task_dialog_mut};
 use crate::task::*;
 use crate::view_controller::ViewController as VC;
 
-use iced::widget::{button, column, container, horizontal_space, row, text, text_editor};
+use iced::widget::{
+    button, column, container, horizontal_space, mouse_area, row, text, text_editor,
+};
 use iced::{Element, Length};
 use sqlx::{Pool, Sqlite};
 
@@ -165,12 +167,15 @@ impl VC for ViewController {
     fn view(&self) -> iced::Element<'_, Self::Message> {
         let mut task_views = vec![];
         for task in self.tasks.iter() {
-            let item = container(row![
-                text(format!("{}: {}", task.id, task.title)),
-                horizontal_space(),
-                button("X").on_press(Message::RemoveTask(task.id))
-            ])
-            .style(container::bordered_box);
+            let item = mouse_area(
+                container(row![
+                    text(format!("{}: {}", task.id, task.title)),
+                    horizontal_space(),
+                    button("X").on_press(Message::RemoveTask(task.id))
+                ])
+                .style(container::bordered_box),
+            )
+            .on_press(Message::OpenModal(Modal::ViewTask(task.id)));
             task_views.push(item.into());
         }
 
