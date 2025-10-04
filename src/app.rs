@@ -146,7 +146,7 @@ impl App {
         }
     }
 
-    pub fn view(&self) -> Element<Message> {
+    pub fn view(&self) -> Element<'_, Message> {
         match self {
             App::Initiaising => center(text("Loading...")).into(),
             App::Initialised(app) => match app.current_view {

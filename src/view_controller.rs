@@ -3,5 +3,5 @@ pub trait ViewController {
 
     fn update(&mut self, msg: Self::Message) -> iced::Task<Self::Message>;
 
-    fn view(&self) -> iced::Element<Self::Message>;
+    fn view(&self) -> iced::Element<'_, Self::Message>;
 }

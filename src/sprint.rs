@@ -62,7 +62,7 @@ impl ViewController {
         self.tasks.iter_mut().find(|task| task.id == id)
     }
 
-    fn modal_view(&self) -> Option<Element<Message>> {
+    fn modal_view(&self) -> Option<Element<'_, Message>> {
         match self.modal {
             Some(Modal::ViewTask(task_id)) => {
                 let maybe_task = self.find_task_by_id(task_id);
@@ -179,7 +179,7 @@ impl VC for ViewController {
         }
     }
 
-    fn view(&self) -> iced::Element<Self::Message> {
+    fn view(&self) -> iced::Element<'_, Self::Message> {
         let mut grouped_by_lane: HashMap<&str, Vec<&Task>> = HashMap::new();
 
         for task in &self.tasks {
