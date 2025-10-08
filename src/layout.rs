@@ -54,6 +54,7 @@ where
 
 pub fn task_card<'a, Message>(
     task: &'a Task,
+    move_to_backlog: Message,
     remove: Message,
     open_modal: Message,
     next_lane: Option<Message>,
@@ -68,6 +69,7 @@ where
             button(">").on_press_maybe(next_lane),
         ]
         .width(Length::Fill),
+        button("<<").on_press(move_to_backlog),
         button("X").on_press(remove)
     ];
 

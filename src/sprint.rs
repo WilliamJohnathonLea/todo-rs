@@ -16,6 +16,7 @@ pub enum Message {
     EditTask(i64),
     RemoveTask(i64),
     MoveToLane(String, i64),
+    MoveToBacklog(i64),
     OpenModal(Modal),
     CloseModal,
     TaskTitleUpdated(String),
@@ -149,6 +150,13 @@ impl VC for ViewController {
                     iced::Task::none()
                 }
             }
+            Message::MoveToBacklog(task_id) => {
+                iced::Task::perform(move_to_backlog(self.db.clone(), task_id), |_| Message::NoOp)
+                    .chain(iced::Task::perform(
+                        get_sprint_tasks(self.db.clone()),
+                        Message::TasksLoaded,
+                    ))
+            }
             Message::OpenModal(modal) => {
                 if let Modal::EditTask(task_id) = modal {
                     if let Some(task) = self.find_task_by_id(task_id) {
@@ -197,6 +205,7 @@ impl VC for ViewController {
                         .map(|lane| Message::MoveToLane(lane.clone(), t.id));
                     task_card(
                         t,
+                        Message::MoveToBacklog(t.id),
                         Message::RemoveTask(t.id),
                         Message::OpenModal(Modal::ViewTask(t.id)),
                         next_lane,

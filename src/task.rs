@@ -86,7 +86,31 @@ pub async fn edit_task(pool: Pool<Sqlite>, task: Task) -> Result<(), String> {
         task.id
     )
     .execute(&pool)
-    .map_err(|_| "Error deleting task from db".into())
+    .map_err(|_| "Error editing task in db".into())
+    .map_ok(|_| ())
+    .await
+}
+
+pub async fn move_to_backlog(pool: Pool<Sqlite>, task_id: i64) -> Result<(), String> {
+    sqlx::query!(
+        "UPDATE tasks SET in_backlog = ? WHERE id = ?",
+        true,
+        task_id
+    )
+    .execute(&pool)
+    .map_err(|_| "Error editing task in db".into())
+    .map_ok(|_| ())
+    .await
+}
+
+pub async fn move_to_sprint(pool: Pool<Sqlite>, task_id: i64) -> Result<(), String> {
+    sqlx::query!(
+        "UPDATE tasks SET in_backlog = ? WHERE id = ?",
+        false,
+        task_id
+    )
+    .execute(&pool)
+    .map_err(|_| "Error editing task in db".into())
     .map_ok(|_| ())
     .await
 }

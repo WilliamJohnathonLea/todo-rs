@@ -15,6 +15,7 @@ pub enum Message {
     CreateTask,
     EditTask(i64),
     RemoveTask(i64),
+    MoveToSprint(i64),
     TaskTitleUpdated(String),
     TaskDescUpdated(text_editor::Action),
     OpenModal(Modal),
@@ -135,6 +136,13 @@ impl VC for ViewController {
                     iced::Task::perform(get_backlog_tasks(self.db.clone()), Message::TasksLoaded),
                 )
             }
+            Message::MoveToSprint(task_id) => {
+                iced::Task::perform(move_to_sprint(self.db.clone(), task_id), |_| Message::NoOp)
+                    .chain(iced::Task::perform(
+                        get_backlog_tasks(self.db.clone()),
+                        Message::TasksLoaded,
+                    ))
+            }
             Message::TaskTitleUpdated(task_text) => {
                 self.new_task_title = task_text;
                 iced::Task::none()
@@ -171,6 +179,7 @@ impl VC for ViewController {
                 container(row![
                     text(format!("{}: {}", task.id, task.title)),
                     horizontal_space(),
+                    button(">>").on_press(Message::MoveToSprint(task.id)),
                     button("X").on_press(Message::RemoveTask(task.id))
                 ])
                 .style(container::bordered_box),
