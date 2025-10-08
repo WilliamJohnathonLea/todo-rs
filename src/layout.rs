@@ -1,8 +1,8 @@
 use crate::task::Task;
 use iced::alignment::Horizontal;
 use iced::widget::{
-    button, center, column, container, mouse_area, opaque, row, stack, text, text_editor,
-    text_input,
+    button, center, column, container, mouse_area, opaque, row, scrollable, stack, text,
+    text_editor, text_input,
 };
 use iced::{Color, Element, Length};
 
@@ -54,6 +54,7 @@ where
 
 pub fn task_card<'a, Message>(
     task: &'a Task,
+    move_to_backlog: Message,
     remove: Message,
     open_modal: Message,
     next_lane: Option<Message>,
@@ -68,6 +69,7 @@ where
             button(">").on_press_maybe(next_lane),
         ]
         .width(Length::Fill),
+        button("<<").on_press(move_to_backlog),
         button("X").on_press(remove)
     ];
 
@@ -142,5 +144,15 @@ where
     container(content)
         .style(container::bordered_box)
         .padding([16, 16])
+        .into()
+}
+
+pub fn backlog<'a, Message>(tasks: Vec<Element<'a, Message>>) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    scrollable(column(tasks).spacing(4))
+        .width(Length::Fill)
+        .height(Length::Fill)
         .into()
 }

@@ -1,8 +1,11 @@
 use crate::app::App;
 
 mod app;
+mod backlog;
 mod layout;
+mod sprint;
 mod task;
+mod view_controller;
 
 fn main() -> iced::Result {
     iced::application("ToDo", App::update, App::view)
