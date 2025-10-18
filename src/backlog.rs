@@ -176,12 +176,16 @@ impl VC for ViewController {
         let mut task_views = vec![];
         for task in self.tasks.iter() {
             let item = mouse_area(
-                container(row![
-                    text(format!("{}: {}", task.id, task.title)),
-                    horizontal_space(),
-                    button(">>").on_press(Message::MoveToSprint(task.id)),
-                    button("X").on_press(Message::RemoveTask(task.id))
-                ])
+                container(
+                    row![
+                        text(format!("{}: {}", task.id, task.title)),
+                        horizontal_space(),
+                        button(">>").on_press(Message::MoveToSprint(task.id)),
+                        button("X").on_press(Message::RemoveTask(task.id))
+                    ]
+                    .spacing(4),
+                )
+                .padding([4, 12])
                 .style(container::bordered_box),
             )
             .on_press(Message::OpenModal(Modal::ViewTask(task.id)));

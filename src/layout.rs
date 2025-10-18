@@ -71,7 +71,8 @@ where
         .width(Length::Fill),
         button("<<").on_press(move_to_backlog),
         button("X").on_press(remove)
-    ];
+    ]
+    .spacing(4);
 
     let card = container(card_content)
         .style(container::rounded_box)
