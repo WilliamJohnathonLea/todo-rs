@@ -137,7 +137,7 @@ where
         container(row![edit_button, close_button].spacing(4)).align_x(Horizontal::Right)
     ];
     let content = if let Some(desc) = &task.description {
-        column![title_row, text(desc)]
+        column![title_row, scrollable(text(desc)).width(Length::Fill)]
     } else {
         column![title_row]
     };
