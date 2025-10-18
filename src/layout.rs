@@ -17,7 +17,7 @@ where
     stack![
         base.into(),
         opaque(
-            mouse_area(center(opaque(content)).style(|_theme| {
+            mouse_area(center(opaque(content)).padding(24).style(|_theme| {
                 container::Style {
                     background: Some(
                         Color {
