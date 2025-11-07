@@ -144,6 +144,7 @@ where
     };
     container(content)
         .style(container::bordered_box)
+        .height(Length::Fill)
         .padding([16, 16])
         .into()
 }
