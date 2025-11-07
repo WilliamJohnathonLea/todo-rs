@@ -17,7 +17,7 @@ where
     stack![
         base.into(),
         opaque(
-            mouse_area(center(opaque(content)).style(|_theme| {
+            mouse_area(center(opaque(content)).padding(24).style(|_theme| {
                 container::Style {
                     background: Some(
                         Color {
@@ -71,7 +71,8 @@ where
         .width(Length::Fill),
         button("<<").on_press(move_to_backlog),
         button("X").on_press(remove)
-    ];
+    ]
+    .spacing(4);
 
     let card = container(card_content)
         .style(container::rounded_box)
@@ -137,12 +138,13 @@ where
         container(row![edit_button, close_button].spacing(4)).align_x(Horizontal::Right)
     ];
     let content = if let Some(desc) = &task.description {
-        column![title_row, text(desc)]
+        column![title_row, scrollable(text(desc)).width(Length::Fill)]
     } else {
         column![title_row]
     };
     container(content)
         .style(container::bordered_box)
+        .height(Length::Fill)
         .padding([16, 16])
         .into()
 }
