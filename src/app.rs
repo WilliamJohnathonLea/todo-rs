@@ -45,6 +45,7 @@ pub struct Initialised {
     backlog_controller: backlog::ViewController,
     tasks_controller: sprint::ViewController,
     current_view: View,
+    current_project_id: Option<i64>,
 }
 
 pub enum View {
@@ -83,20 +84,26 @@ impl App {
     fn update_initialising(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::Initialised(pool, config) => {
-                if let Some(initial_lane) = config.lanes.get(0) {
-                    let (tasks_controller, _) =
-                        sprint::ViewController::new(pool.clone(), config.lanes.clone());
-                    let (backlog_controller, _) =
-                        backlog::ViewController::new(pool.clone(), initial_lane.to_owned());
+                if let Some(_initial_lane) = config.lanes.get(0) {
                     let (projects_controller, task) = projects::ViewController::new(pool.clone());
 
                     *self = App::Initialised(Initialised {
                         config,
                         db: pool.clone(),
                         projects_controller,
-                        backlog_controller,
-                        tasks_controller,
+                        backlog_controller: {
+                            // Create a dummy controller, will be replaced when project is opened
+                            let (ctrl, _) =
+                                backlog::ViewController::new(pool.clone(), String::new(), 1);
+                            ctrl
+                        },
+                        tasks_controller: {
+                            // Create a dummy controller, will be replaced when project is opened
+                            let (ctrl, _) = sprint::ViewController::new(pool.clone(), vec![], 1);
+                            ctrl
+                        },
                         current_view: View::Projects,
+                        current_project_id: None,
                     });
                     task.map(Message::ProjectsMessage)
                 } else {
@@ -112,17 +119,39 @@ impl App {
 
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
+            Message::ProjectsMessage(projects::Message::ProjectOpened(project_id)) => {
+                if let Some(initial_lane) = app.config.lanes.get(0) {
+                    let (backlog_controller, task) = backlog::ViewController::new(
+                        app.db.clone(),
+                        initial_lane.to_owned(),
+                        project_id,
+                    );
+                    app.current_view = View::Backlog;
+                    app.current_project_id = Some(project_id);
+                    app.backlog_controller = backlog_controller;
+                    task.map(Message::BacklogMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
             Message::ProjectsMessage(projects_msg) => app
                 .projects_controller
                 .update(projects_msg)
                 .map(Message::ProjectsMessage),
             Message::TaskMessage(sprint::Message::OpenBacklog) => {
                 if let Some(initial_lane) = app.config.lanes.get(0) {
-                    let (backlog_controller, task) =
-                        backlog::ViewController::new(app.db.clone(), initial_lane.to_owned());
-                    app.current_view = View::Backlog;
-                    app.backlog_controller = backlog_controller;
-                    task.map(Message::BacklogMessage)
+                    if let Some(project_id) = app.current_project_id {
+                        let (backlog_controller, task) = backlog::ViewController::new(
+                            app.db.clone(),
+                            initial_lane.to_owned(),
+                            project_id,
+                        );
+                        app.current_view = View::Backlog;
+                        app.backlog_controller = backlog_controller;
+                        task.map(Message::BacklogMessage)
+                    } else {
+                        iced::Task::none()
+                    }
                 } else {
                     iced::Task::none()
                 }
@@ -132,11 +161,18 @@ impl App {
                 .update(task_msg)
                 .map(Message::TaskMessage),
             Message::BacklogMessage(backlog::Message::OpenSprint) => {
-                let (tasks_controller, task) =
-                    sprint::ViewController::new(app.db.clone(), app.config.lanes.clone());
-                app.current_view = View::Sprint;
-                app.tasks_controller = tasks_controller;
-                task.map(Message::TaskMessage)
+                if let Some(project_id) = app.current_project_id {
+                    let (tasks_controller, task) = sprint::ViewController::new(
+                        app.db.clone(),
+                        app.config.lanes.clone(),
+                        project_id,
+                    );
+                    app.current_view = View::Sprint;
+                    app.tasks_controller = tasks_controller;
+                    task.map(Message::TaskMessage)
+                } else {
+                    iced::Task::none()
+                }
             }
             Message::BacklogMessage(backlog_msg) => app
                 .backlog_controller

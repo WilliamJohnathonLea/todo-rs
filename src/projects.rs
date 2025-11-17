@@ -17,7 +17,8 @@ pub enum Message {
     OpenNewProject,
     SubmitNewProject,
     ProjectNameUpdated(String),
-    OpenProject(i64),
+    SelectProject(i64),
+    ProjectOpened(i64),
     Cancel,
     NoOp,
 }
@@ -87,10 +88,12 @@ impl VC for ViewController {
                 self.new_project_name.clear();
                 iced::Task::none()
             }
-            Message::OpenProject(project_id) => {
+            Message::SelectProject(project_id) => {
                 self.selected_project = Some(project_id);
                 iced::Task::none()
             }
+            Message::ProjectOpened(_project_id) => iced::Task::none(), // Handled at the App level
+
             Message::NoOp => iced::Task::none(),
         }
     }
@@ -108,7 +111,7 @@ impl VC for ViewController {
                 let project_button = button(text(&project.name).width(Length::Fill).size(14))
                     .width(Length::Fill)
                     .padding(12)
-                    .on_press(Message::OpenProject(project.id))
+                    .on_press(Message::SelectProject(project.id))
                     .style(move |theme, status| {
                         if is_selected {
                             iced::widget::button::primary(theme, status)
@@ -138,7 +141,7 @@ impl VC for ViewController {
 
         let open_button = if self.selected_project.is_some() {
             button(text("Open Project").size(14))
-                .on_press(Message::OpenProject(self.selected_project.unwrap()))
+                .on_press(Message::ProjectOpened(self.selected_project.unwrap()))
                 .padding(10)
                 .style(iced::widget::button::success)
         } else {

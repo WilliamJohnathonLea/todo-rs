@@ -28,22 +28,28 @@ pub struct ViewController {
     db: Pool<Sqlite>,
     tasks: Vec<Task>,
     initial_lane: String,
+    project_id: i64,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
 
 impl ViewController {
-    pub fn new(db: Pool<Sqlite>, initial_lane: String) -> (Self, iced::Task<Message>) {
+    pub fn new(
+        db: Pool<Sqlite>,
+        initial_lane: String,
+        project_id: i64,
+    ) -> (Self, iced::Task<Message>) {
         (
             ViewController {
                 modal: None,
                 db: db.clone(),
                 tasks: vec![],
                 initial_lane,
+                project_id,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
-            iced::Task::perform(get_backlog_tasks(db), Message::TasksLoaded),
+            iced::Task::perform(get_backlog_tasks(db, project_id), Message::TasksLoaded),
         )
     }
 
@@ -112,10 +118,16 @@ impl VC for ViewController {
                 let title = self.new_task_title.clone();
                 let desc = Some(self.new_task_description.text());
                 let in_backlog = true;
-                let task = NewTask::new(title, desc, self.initial_lane.clone(), in_backlog);
+                let task = NewTask::new(
+                    title,
+                    desc,
+                    self.initial_lane.clone(),
+                    in_backlog,
+                    self.project_id,
+                );
                 iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
                     .chain(iced::Task::perform(
-                        get_backlog_tasks(self.db.clone()),
+                        get_backlog_tasks(self.db.clone(), self.project_id),
                         Message::TasksLoaded,
                     ))
             }
@@ -133,13 +145,16 @@ impl VC for ViewController {
             }
             Message::RemoveTask(task_id) => {
                 iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
-                    iced::Task::perform(get_backlog_tasks(self.db.clone()), Message::TasksLoaded),
+                    iced::Task::perform(
+                        get_backlog_tasks(self.db.clone(), self.project_id),
+                        Message::TasksLoaded,
+                    ),
                 )
             }
             Message::MoveToSprint(task_id) => {
                 iced::Task::perform(move_to_sprint(self.db.clone(), task_id), |_| Message::NoOp)
                     .chain(iced::Task::perform(
-                        get_backlog_tasks(self.db.clone()),
+                        get_backlog_tasks(self.db.clone(), self.project_id),
                         Message::TasksLoaded,
                     ))
             }

@@ -30,22 +30,28 @@ pub struct ViewController {
     db: Pool<Sqlite>,
     lanes: Vec<String>,
     tasks: Vec<Task>,
+    project_id: i64,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
 
 impl ViewController {
-    pub fn new(db: Pool<Sqlite>, lanes: Vec<String>) -> (Self, iced::Task<Message>) {
+    pub fn new(
+        db: Pool<Sqlite>,
+        lanes: Vec<String>,
+        project_id: i64,
+    ) -> (Self, iced::Task<Message>) {
         (
             Self {
                 modal: None,
                 db: db.clone(),
                 lanes,
                 tasks: vec![],
+                project_id,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
-            iced::Task::perform(get_sprint_tasks(db), Message::TasksLoaded),
+            iced::Task::perform(get_sprint_tasks(db, project_id), Message::TasksLoaded),
         )
     }
 
@@ -114,10 +120,10 @@ impl VC for ViewController {
                 let desc = Some(self.new_task_description.text());
                 if let Some(lane) = self.lanes.get(0) {
                     let in_backlog = false;
-                    let task = NewTask::new(title, desc, lane.clone(), in_backlog);
+                    let task = NewTask::new(title, desc, lane.clone(), in_backlog, self.project_id);
                     iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
                         .chain(iced::Task::perform(
-                            get_sprint_tasks(self.db.clone()),
+                            get_sprint_tasks(self.db.clone(), self.project_id),
                             Message::TasksLoaded,
                         ))
                 } else {
@@ -138,7 +144,10 @@ impl VC for ViewController {
             }
             Message::RemoveTask(task_id) => {
                 iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
-                    iced::Task::perform(get_sprint_tasks(self.db.clone()), Message::TasksLoaded),
+                    iced::Task::perform(
+                        get_sprint_tasks(self.db.clone(), self.project_id),
+                        Message::TasksLoaded,
+                    ),
                 )
             }
             Message::MoveToLane(new_lane, task_id) => {
@@ -153,7 +162,7 @@ impl VC for ViewController {
             Message::MoveToBacklog(task_id) => {
                 iced::Task::perform(move_to_backlog(self.db.clone(), task_id), |_| Message::NoOp)
                     .chain(iced::Task::perform(
-                        get_sprint_tasks(self.db.clone()),
+                        get_sprint_tasks(self.db.clone(), self.project_id),
                         Message::TasksLoaded,
                     ))
             }
