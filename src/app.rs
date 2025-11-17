@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::{Pool, Sqlite, SqlitePool};
 
-use crate::{backlog, sprint, view_controller::ViewController};
+use crate::{backlog, projects, sprint, view_controller::ViewController};
 
 const TO_DO: &str = "To do";
 const IN_PROGRESS: &str = "In progress";
@@ -19,6 +19,7 @@ const CONFIG_FILE: &str = "config.toml";
 #[derive(Debug, Clone)]
 pub enum Message {
     Initialised(Pool<Sqlite>, Config),
+    ProjectsMessage(projects::Message),
     BacklogMessage(backlog::Message),
     TaskMessage(sprint::Message),
     EventReceived(iced::Event),
@@ -40,12 +41,14 @@ impl Default for Config {
 pub struct Initialised {
     config: Config,
     db: Pool<Sqlite>,
+    projects_controller: projects::ViewController,
     backlog_controller: backlog::ViewController,
     tasks_controller: sprint::ViewController,
     current_view: View,
 }
 
 pub enum View {
+    Projects,
     Backlog,
     Sprint,
 }
@@ -81,19 +84,21 @@ impl App {
         match msg {
             Message::Initialised(pool, config) => {
                 if let Some(initial_lane) = config.lanes.get(0) {
-                    let (tasks_controller, task) =
+                    let (tasks_controller, _) =
                         sprint::ViewController::new(pool.clone(), config.lanes.clone());
                     let (backlog_controller, _) =
                         backlog::ViewController::new(pool.clone(), initial_lane.to_owned());
+                    let (projects_controller, task) = projects::ViewController::new(pool.clone());
 
                     *self = App::Initialised(Initialised {
                         config,
                         db: pool.clone(),
+                        projects_controller,
                         backlog_controller,
                         tasks_controller,
-                        current_view: View::Sprint,
+                        current_view: View::Projects,
                     });
-                    task.map(Message::TaskMessage)
+                    task.map(Message::ProjectsMessage)
                 } else {
                     iced::Task::none()
                 }
@@ -107,6 +112,10 @@ impl App {
 
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
+            Message::ProjectsMessage(projects_msg) => app
+                .projects_controller
+                .update(projects_msg)
+                .map(Message::ProjectsMessage),
             Message::TaskMessage(sprint::Message::OpenBacklog) => {
                 if let Some(initial_lane) = app.config.lanes.get(0) {
                     let (backlog_controller, task) =
@@ -150,6 +159,7 @@ impl App {
         match self {
             App::Initiaising => center(text("Loading...")).into(),
             App::Initialised(app) => match app.current_view {
+                View::Projects => app.projects_controller.view().map(Message::ProjectsMessage),
                 View::Backlog => app.backlog_controller.view().map(Message::BacklogMessage),
                 View::Sprint => app.tasks_controller.view().map(Message::TaskMessage),
             },
