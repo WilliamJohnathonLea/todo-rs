@@ -19,6 +19,8 @@ pub enum Message {
     ProjectNameUpdated(String),
     SelectProject(i64),
     ProjectOpened(i64),
+    OpenEditProject(i64),
+    SubmitEditProject(i64),
     DeleteProject(i64),
     ProjectDeleted(i64),
     Cancel,
@@ -36,6 +38,7 @@ pub struct ViewController {
 #[derive(Clone, Debug)]
 pub enum Modal {
     NewProject,
+    EditProject(i64),
 }
 
 impl ViewController {
@@ -72,6 +75,15 @@ impl VC for ViewController {
                 self.modal = Some(Modal::NewProject);
                 iced::Task::none()
             }
+            Message::OpenEditProject(project_id) => {
+                // populate name with current project name
+                if let Some(p) = self.projects.iter().find(|p| p.id == project_id) {
+                    self.new_project_name = p.name.clone();
+                    self.selected_project = Some(project_id);
+                }
+                self.modal = Some(Modal::EditProject(project_id));
+                iced::Task::none()
+            }
             Message::SubmitNewProject => {
                 let name = self.new_project_name.clone();
                 if !name.is_empty() {
@@ -102,6 +114,23 @@ impl VC for ViewController {
                 }
                 iced::Task::none()
             }
+            Message::SubmitEditProject(project_id) => {
+                let name = self.new_project_name.clone();
+                if !name.is_empty() {
+                    let db = self.db.clone();
+                    self.new_project_name.clear();
+                    self.modal = None;
+                    iced::Task::perform(update_project(db.clone(), project_id, name), |_| {
+                        Message::NoOp
+                    })
+                    .chain(iced::Task::perform(
+                        get_all_projects(db),
+                        Message::ProjectsLoaded,
+                    ))
+                } else {
+                    iced::Task::none()
+                }
+            }
             Message::Cancel => {
                 self.modal = None;
                 self.new_project_name.clear();
@@ -112,7 +141,6 @@ impl VC for ViewController {
                 iced::Task::none()
             }
             Message::ProjectOpened(_project_id) => iced::Task::none(), // Handled at the App level
-
             Message::NoOp => iced::Task::none(),
         }
     }
@@ -139,11 +167,17 @@ impl VC for ViewController {
                         }
                     });
 
+                let edit_btn = button(text("✎").size(14))
+                    .padding(8)
+                    .on_press(Message::OpenEditProject(project.id));
+
                 let delete_btn = button(text("X").size(14))
                     .padding(8)
                     .on_press(Message::DeleteProject(project.id));
 
-                let row = row![name_btn, delete_btn].spacing(8).width(Length::Fill);
+                let row = row![name_btn, edit_btn, delete_btn]
+                    .spacing(8)
+                    .width(Length::Fill);
 
                 list = list.push(row);
             }
@@ -179,18 +213,30 @@ impl VC for ViewController {
 
         let base = column![projects_section, button_row].spacing(8).padding(16);
 
-        if let Some(Modal::NewProject) = &self.modal {
-            let dialog = project_dialog(
-                "New Project".into(),
-                &self.new_project_name,
-                &Message::ProjectNameUpdated,
-                Message::SubmitNewProject,
-                Message::Cancel,
-            );
+        match &self.modal {
+            Some(Modal::EditProject(project_id)) => {
+                let dialog = project_dialog(
+                    "Edit Project".into(),
+                    &self.new_project_name,
+                    &Message::ProjectNameUpdated,
+                    Message::SubmitEditProject(*project_id),
+                    Message::Cancel,
+                );
 
-            modal(base, dialog, Message::Cancel)
-        } else {
-            base.into()
+                modal(base, dialog, Message::Cancel)
+            }
+            Some(Modal::NewProject) => {
+                let dialog = project_dialog(
+                    "New Project".into(),
+                    &self.new_project_name,
+                    &Message::ProjectNameUpdated,
+                    Message::SubmitNewProject,
+                    Message::Cancel,
+                );
+
+                modal(base, dialog, Message::Cancel)
+            }
+            None => base.into(),
         }
     }
 }
@@ -221,6 +267,23 @@ pub async fn delete_project(pool: Pool<Sqlite>, project_id: i64) -> Result<(), S
         .execute(&pool)
         .await
         .map_err(|_| "Error deleting project".to_string())?;
+
+    Ok(())
+}
+
+pub async fn update_project(
+    pool: Pool<Sqlite>,
+    project_id: i64,
+    name: String,
+) -> Result<(), String> {
+    sqlx::query!(
+        "UPDATE projects SET name = ? WHERE id = ?",
+        name,
+        project_id
+    )
+    .execute(&pool)
+    .await
+    .map_err(|_| "Error updating project".to_string())?;
 
     Ok(())
 }
