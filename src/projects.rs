@@ -1,3 +1,4 @@
+use crate::layout::{modal, project_dialog};
 use crate::view_controller::ViewController as VC;
 use iced::futures::TryFutureExt;
 use iced::widget::{button, column, container, row, text};
@@ -13,9 +14,11 @@ pub struct Project {
 #[derive(Clone, Debug)]
 pub enum Message {
     ProjectsLoaded(Result<Vec<Project>, String>),
-    CreateProject,
+    OpenNewProject,
+    SubmitNewProject,
     ProjectNameUpdated(String),
     OpenProject(i64),
+    Cancel,
     NoOp,
 }
 
@@ -23,7 +26,13 @@ pub struct ViewController {
     db: Pool<Sqlite>,
     projects: Vec<Project>,
     new_project_name: String,
+    modal: Option<Modal>,
     selected_project: Option<i64>,
+}
+
+#[derive(Clone, Debug)]
+pub enum Modal {
+    NewProject,
 }
 
 impl ViewController {
@@ -33,6 +42,7 @@ impl ViewController {
                 db: db.clone(),
                 projects: vec![],
                 new_project_name: Default::default(),
+                modal: None,
                 selected_project: None,
             },
             iced::Task::perform(get_all_projects(db), Message::ProjectsLoaded),
@@ -55,17 +65,27 @@ impl VC for ViewController {
                 self.new_project_name = name;
                 iced::Task::none()
             }
-            Message::CreateProject => {
+            Message::OpenNewProject => {
+                self.modal = Some(Modal::NewProject);
+                iced::Task::none()
+            }
+            Message::SubmitNewProject => {
                 let name = self.new_project_name.clone();
                 if !name.is_empty() {
                     let db = self.db.clone();
                     self.new_project_name.clear();
+                    self.modal = None;
                     iced::Task::perform(insert_project(db.clone(), name), |_| Message::NoOp).chain(
                         iced::Task::perform(get_all_projects(db), Message::ProjectsLoaded),
                     )
                 } else {
                     iced::Task::none()
                 }
+            }
+            Message::Cancel => {
+                self.modal = None;
+                self.new_project_name.clear();
+                iced::Task::none()
             }
             Message::OpenProject(project_id) => {
                 self.selected_project = Some(project_id);
@@ -113,7 +133,7 @@ impl VC for ViewController {
         .spacing(8);
 
         let create_button = button(text("+ Create Project").size(14))
-            .on_press(Message::CreateProject)
+            .on_press(Message::OpenNewProject)
             .padding(10);
 
         let open_button = if self.selected_project.is_some() {
@@ -129,10 +149,21 @@ impl VC for ViewController {
 
         let button_row = row![create_button, open_button].spacing(8).padding(16);
 
-        column![projects_section, button_row]
-            .spacing(8)
-            .padding(16)
-            .into()
+        let base = column![projects_section, button_row].spacing(8).padding(16);
+
+        if let Some(Modal::NewProject) = &self.modal {
+            let dialog = project_dialog(
+                "New Project".into(),
+                &self.new_project_name,
+                &Message::ProjectNameUpdated,
+                Message::SubmitNewProject,
+                Message::Cancel,
+            );
+
+            modal(base, dialog, Message::Cancel)
+        } else {
+            base.into()
+        }
     }
 }
 
