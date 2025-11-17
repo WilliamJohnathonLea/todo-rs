@@ -19,6 +19,8 @@ pub enum Message {
     ProjectNameUpdated(String),
     SelectProject(i64),
     ProjectOpened(i64),
+    DeleteProject(i64),
+    ProjectDeleted(i64),
     Cancel,
     NoOp,
 }
@@ -76,12 +78,29 @@ impl VC for ViewController {
                     let db = self.db.clone();
                     self.new_project_name.clear();
                     self.modal = None;
-                    iced::Task::perform(insert_project(db.clone(), name), |_| Message::NoOp).chain(
-                        iced::Task::perform(get_all_projects(db), Message::ProjectsLoaded),
-                    )
+                    iced::Task::perform(insert_project(db.clone(), name), |res| match res {
+                        Ok(id) => Message::ProjectOpened(id),
+                        Err(_) => Message::NoOp,
+                    })
                 } else {
                     iced::Task::none()
                 }
+            }
+            Message::DeleteProject(project_id) => {
+                let db = self.db.clone();
+                iced::Task::perform(delete_project(db.clone(), project_id), move |_| {
+                    Message::ProjectDeleted(project_id)
+                })
+                .chain(iced::Task::perform(
+                    get_all_projects(db),
+                    Message::ProjectsLoaded,
+                ))
+            }
+            Message::ProjectDeleted(deleted_id) => {
+                if self.selected_project == Some(deleted_id) {
+                    self.selected_project = None;
+                }
+                iced::Task::none()
             }
             Message::Cancel => {
                 self.modal = None;
@@ -108,7 +127,7 @@ impl VC for ViewController {
             let mut list = column![].spacing(4);
             for project in &self.projects {
                 let is_selected = self.selected_project == Some(project.id);
-                let project_button = button(text(&project.name).width(Length::Fill).size(14))
+                let name_btn = button(text(&project.name).width(Length::Fill).size(14))
                     .width(Length::Fill)
                     .padding(12)
                     .on_press(Message::SelectProject(project.id))
@@ -120,7 +139,13 @@ impl VC for ViewController {
                         }
                     });
 
-                list = list.push(project_button);
+                let delete_btn = button(text("X").size(14))
+                    .padding(8)
+                    .on_press(Message::DeleteProject(project.id));
+
+                let row = row![name_btn, delete_btn].spacing(8).width(Length::Fill);
+
+                list = list.push(row);
             }
             list
         };
@@ -177,10 +202,25 @@ pub async fn get_all_projects(pool: Pool<Sqlite>) -> Result<Vec<Project>, String
         .await
 }
 
-pub async fn insert_project(pool: Pool<Sqlite>, name: String) -> Result<(), String> {
+pub async fn insert_project(pool: Pool<Sqlite>, name: String) -> Result<i64, String> {
     sqlx::query!("INSERT INTO projects (name) VALUES (?)", name)
         .execute(&pool)
         .map_err(|_| "Error inserting project into db".into())
-        .map_ok(|_| ())
+        .map_ok(|res| res.last_insert_rowid())
         .await
+}
+
+pub async fn delete_project(pool: Pool<Sqlite>, project_id: i64) -> Result<(), String> {
+    // delete tasks for project then delete project
+    sqlx::query!("DELETE FROM tasks WHERE project_id = ?", project_id)
+        .execute(&pool)
+        .await
+        .map_err(|_| "Error deleting tasks for project".to_string())?;
+
+    sqlx::query!("DELETE FROM projects WHERE id = ?", project_id)
+        .execute(&pool)
+        .await
+        .map_err(|_| "Error deleting project".to_string())?;
+
+    Ok(())
 }
