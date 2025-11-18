@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use directories::BaseDirs;
 use iced::futures::TryFutureExt;
 use iced::widget::{center, text};
@@ -42,7 +44,7 @@ pub struct Initialised {
     config: Config,
     db: Pool<Sqlite>,
     current_view: View,
-    current_project: Option<projects::Project>,
+    current_project: Option<Rc<projects::Project>>,
 }
 
 pub enum View {
@@ -103,14 +105,14 @@ impl App {
             Message::ProjectsMessage(projects::Message::ProjectOpened(project)) => {
                 if let Some(initial_lane) = app.config.lanes.get(0) {
                     // store project in app state and create backlog controller from it
-                    let project_for_ctrl = project.clone();
+                    let rc = Rc::new(project);
                     let (backlog_controller, task) = backlog::ViewController::new(
                         app.db.clone(),
                         initial_lane.to_owned(),
-                        project_for_ctrl,
+                        rc.clone(),
                     );
                     app.current_view = View::Backlog(backlog_controller);
-                    app.current_project = Some(project);
+                    app.current_project = Some(rc);
                     task.map(Message::BacklogMessage)
                 } else {
                     iced::Task::none()

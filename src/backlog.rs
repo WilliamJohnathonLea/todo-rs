@@ -1,4 +1,7 @@
+use std::rc::Rc;
+
 use crate::layout::{backlog, modal, task_dialog, task_dialog_mut};
+use crate::projects;
 use crate::task::*;
 use crate::view_controller::ViewController as VC;
 
@@ -28,8 +31,7 @@ pub struct ViewController {
     db: Pool<Sqlite>,
     tasks: Vec<Task>,
     initial_lane: String,
-    project_id: i64,
-    project_name: String,
+    project: Rc<projects::Project>,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
@@ -38,18 +40,16 @@ impl ViewController {
     pub fn new(
         db: Pool<Sqlite>,
         initial_lane: String,
-        project: crate::projects::Project,
+        project: Rc<projects::Project>,
     ) -> (Self, iced::Task<Message>) {
         let project_id = project.id;
-        let project_name = project.name.clone();
         (
             ViewController {
                 modal: None,
                 db: db.clone(),
                 tasks: vec![],
                 initial_lane,
-                project_id,
-                project_name,
+                project: project,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
@@ -127,11 +127,11 @@ impl VC for ViewController {
                     desc,
                     self.initial_lane.clone(),
                     in_backlog,
-                    self.project_id,
+                    self.project.id,
                 );
                 iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
                     .chain(iced::Task::perform(
-                        get_backlog_tasks(self.db.clone(), self.project_id),
+                        get_backlog_tasks(self.db.clone(), self.project.id),
                         Message::TasksLoaded,
                     ))
             }
@@ -150,7 +150,7 @@ impl VC for ViewController {
             Message::RemoveTask(task_id) => {
                 iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
                     iced::Task::perform(
-                        get_backlog_tasks(self.db.clone(), self.project_id),
+                        get_backlog_tasks(self.db.clone(), self.project.id),
                         Message::TasksLoaded,
                     ),
                 )
@@ -158,7 +158,7 @@ impl VC for ViewController {
             Message::MoveToSprint(task_id) => {
                 iced::Task::perform(move_to_sprint(self.db.clone(), task_id), |_| Message::NoOp)
                     .chain(iced::Task::perform(
-                        get_backlog_tasks(self.db.clone(), self.project_id),
+                        get_backlog_tasks(self.db.clone(), self.project.id),
                         Message::TasksLoaded,
                     ))
             }
@@ -217,7 +217,7 @@ impl VC for ViewController {
                 button("Add Task").on_press(Message::OpenModal(Modal::NewTask)),
             ]
             .spacing(4),
-            text(&self.project_name).size(32),
+            text(&self.project.name).size(32),
             text("Backlog").size(16),
             backlog(task_views)
         ]

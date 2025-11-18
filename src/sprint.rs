@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::vec;
+use std::rc::Rc;
 
 use iced::widget::{button, column, row, text, text_editor};
 use iced::{Element, Length};
 use sqlx::{Pool, Sqlite};
 
 use crate::layout::{modal, swim_lane, task_card, task_dialog, task_dialog_mut};
+use crate::projects;
 use crate::task::*;
 use crate::view_controller::ViewController as VC;
 
@@ -30,8 +31,7 @@ pub struct ViewController {
     db: Pool<Sqlite>,
     lanes: Vec<String>,
     tasks: Vec<Task>,
-    project_id: i64,
-    project_name: String,
+    project: Rc<projects::Project>,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
@@ -40,18 +40,16 @@ impl ViewController {
     pub fn new(
         db: Pool<Sqlite>,
         lanes: Vec<String>,
-        project: crate::projects::Project,
+        project: Rc<projects::Project>,
     ) -> (Self, iced::Task<Message>) {
         let project_id = project.id;
-        let project_name = project.name.clone();
         (
             Self {
                 modal: None,
                 db: db.clone(),
                 lanes,
                 tasks: vec![],
-                project_id,
-                project_name,
+                project: project,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
@@ -124,10 +122,10 @@ impl VC for ViewController {
                 let desc = Some(self.new_task_description.text());
                 if let Some(lane) = self.lanes.get(0) {
                     let in_backlog = false;
-                    let task = NewTask::new(title, desc, lane.clone(), in_backlog, self.project_id);
+                    let task = NewTask::new(title, desc, lane.clone(), in_backlog, self.project.id);
                     iced::Task::perform(insert_task(self.db.clone(), task), |_| Message::CloseModal)
                         .chain(iced::Task::perform(
-                            get_sprint_tasks(self.db.clone(), self.project_id),
+                            get_sprint_tasks(self.db.clone(), self.project.id),
                             Message::TasksLoaded,
                         ))
                 } else {
@@ -149,7 +147,7 @@ impl VC for ViewController {
             Message::RemoveTask(task_id) => {
                 iced::Task::perform(remove_task(self.db.clone(), task_id), |_| Message::NoOp).chain(
                     iced::Task::perform(
-                        get_sprint_tasks(self.db.clone(), self.project_id),
+                        get_sprint_tasks(self.db.clone(), self.project.id),
                         Message::TasksLoaded,
                     ),
                 )
@@ -166,7 +164,7 @@ impl VC for ViewController {
             Message::MoveToBacklog(task_id) => {
                 iced::Task::perform(move_to_backlog(self.db.clone(), task_id), |_| Message::NoOp)
                     .chain(iced::Task::perform(
-                        get_sprint_tasks(self.db.clone(), self.project_id),
+                        get_sprint_tasks(self.db.clone(), self.project.id),
                         Message::TasksLoaded,
                     ))
             }
@@ -230,7 +228,7 @@ impl VC for ViewController {
             swim_lane(title, elems)
         });
 
-        let title = text(&self.project_name).size(32);
+        let title = text(&self.project.name).size(32);
         let subtitle = text("Sprint").size(16);
 
         let base_content = column![
