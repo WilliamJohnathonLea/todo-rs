@@ -185,10 +185,10 @@ impl App {
     pub fn view(&self) -> Element<'_, Message> {
         match self {
             App::Initiaising => center(text("Loading...")).into(),
-            App::Initialised(app) => match app.current_view {
-                View::Projects(ref ctrl) => ctrl.view().map(Message::ProjectsMessage),
-                View::Backlog(ref ctrl) => ctrl.view().map(Message::BacklogMessage),
-                View::Sprint(ref ctrl) => ctrl.view().map(Message::TaskMessage),
+            App::Initialised(app) => match &app.current_view {
+                View::Projects(ctrl) => ctrl.view().map(Message::ProjectsMessage),
+                View::Backlog(ctrl) => ctrl.view().map(Message::BacklogMessage),
+                View::Sprint(ctrl) => ctrl.view().map(Message::TaskMessage),
             },
         }
     }
