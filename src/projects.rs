@@ -18,7 +18,7 @@ pub enum Message {
     SubmitNewProject,
     ProjectNameUpdated(String),
     SelectProject(i64),
-    ProjectOpened(i64),
+    ProjectOpened(Project),
     OpenEditProject(i64),
     SubmitEditProject(i64),
     DeleteProject(i64),
@@ -91,7 +91,7 @@ impl VC for ViewController {
                     self.new_project_name.clear();
                     self.modal = None;
                     iced::Task::perform(insert_project(db.clone(), name), |res| match res {
-                        Ok(id) => Message::ProjectOpened(id),
+                        Ok(project) => Message::ProjectOpened(project),
                         Err(_) => Message::NoOp,
                     })
                 } else {
@@ -140,7 +140,7 @@ impl VC for ViewController {
                 self.selected_project = Some(project_id);
                 iced::Task::none()
             }
-            Message::ProjectOpened(_project_id) => iced::Task::none(), // Handled at the App level
+            Message::ProjectOpened(_project) => iced::Task::none(), // Handled at the App level
             Message::NoOp => iced::Task::none(),
         }
     }
@@ -198,11 +198,18 @@ impl VC for ViewController {
             .on_press(Message::OpenNewProject)
             .padding(10);
 
-        let open_button = if self.selected_project.is_some() {
-            button(text("Open Project").size(14))
-                .on_press(Message::ProjectOpened(self.selected_project.unwrap()))
-                .padding(10)
-                .style(iced::widget::button::success)
+        let open_button = if let Some(selected_id) = self.selected_project {
+            // find the selected project and capture it for the message
+            if let Some(p) = self.projects.iter().find(|p| p.id == selected_id) {
+                button(text("Open Project").size(14))
+                    .on_press(Message::ProjectOpened(p.clone()))
+                    .padding(10)
+                    .style(iced::widget::button::success)
+            } else {
+                button(text("Open Project").size(14))
+                    .padding(10)
+                    .style(iced::widget::button::secondary)
+            }
         } else {
             button(text("Open Project").size(14))
                 .padding(10)
@@ -248,12 +255,14 @@ pub async fn get_all_projects(pool: Pool<Sqlite>) -> Result<Vec<Project>, String
         .await
 }
 
-pub async fn insert_project(pool: Pool<Sqlite>, name: String) -> Result<i64, String> {
-    sqlx::query!("INSERT INTO projects (name) VALUES (?)", name)
+pub async fn insert_project(pool: Pool<Sqlite>, name: String) -> Result<Project, String> {
+    let res = sqlx::query!("INSERT INTO projects (name) VALUES (?)", name)
         .execute(&pool)
-        .map_err(|_| "Error inserting project into db".into())
-        .map_ok(|res| res.last_insert_rowid())
         .await
+        .map_err(|_| String::from("Error inserting project into db"))?;
+
+    let id = res.last_insert_rowid();
+    Ok(Project { id, name })
 }
 
 pub async fn delete_project(pool: Pool<Sqlite>, project_id: i64) -> Result<(), String> {

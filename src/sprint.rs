@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::vec;
 
-use iced::widget::{button, column, row, text_editor};
+use iced::widget::{button, column, row, text, text_editor};
 use iced::{Element, Length};
 use sqlx::{Pool, Sqlite};
 
@@ -31,6 +31,7 @@ pub struct ViewController {
     lanes: Vec<String>,
     tasks: Vec<Task>,
     project_id: i64,
+    project_name: String,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
@@ -39,8 +40,10 @@ impl ViewController {
     pub fn new(
         db: Pool<Sqlite>,
         lanes: Vec<String>,
-        project_id: i64,
+        project: crate::projects::Project,
     ) -> (Self, iced::Task<Message>) {
+        let project_id = project.id;
+        let project_name = project.name.clone();
         (
             Self {
                 modal: None,
@@ -48,6 +51,7 @@ impl ViewController {
                 lanes,
                 tasks: vec![],
                 project_id,
+                project_name,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
@@ -226,12 +230,17 @@ impl VC for ViewController {
             swim_lane(title, elems)
         });
 
+        let title = text(&self.project_name).size(32);
+        let subtitle = text("Sprint").size(16);
+
         let base_content = column![
             row![
                 button("Backlog").on_press(Message::OpenBacklog),
                 button("Add Task").on_press(Message::OpenModal(Modal::NewTask))
             ]
             .spacing(4),
+            title,
+            subtitle,
             row(lanes).spacing(24),
         ]
         .width(Length::Fill)

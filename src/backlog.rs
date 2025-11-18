@@ -29,6 +29,7 @@ pub struct ViewController {
     tasks: Vec<Task>,
     initial_lane: String,
     project_id: i64,
+    project_name: String,
     new_task_title: String,
     new_task_description: text_editor::Content,
 }
@@ -37,8 +38,10 @@ impl ViewController {
     pub fn new(
         db: Pool<Sqlite>,
         initial_lane: String,
-        project_id: i64,
+        project: crate::projects::Project,
     ) -> (Self, iced::Task<Message>) {
+        let project_id = project.id;
+        let project_name = project.name.clone();
         (
             ViewController {
                 modal: None,
@@ -46,6 +49,7 @@ impl ViewController {
                 tasks: vec![],
                 initial_lane,
                 project_id,
+                project_name,
                 new_task_title: Default::default(),
                 new_task_description: Default::default(),
             },
@@ -213,7 +217,8 @@ impl VC for ViewController {
                 button("Add Task").on_press(Message::OpenModal(Modal::NewTask)),
             ]
             .spacing(4),
-            text("Backlog").size(24),
+            text(&self.project_name).size(32),
+            text("Backlog").size(16),
             backlog(task_views)
         ]
         .width(Length::Fill)
