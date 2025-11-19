@@ -190,3 +190,32 @@ where
         .height(Length::Fill)
         .into()
 }
+
+pub fn confirm_dialog<'a, Message>(
+    message: String,
+    confirm: Message,
+    cancel: Message,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let content = column![
+        text(message).size(20),
+        row![
+            button("Confirm")
+                .style(iced::widget::button::primary)
+                .on_press(confirm),
+            button("Cancel")
+                .style(iced::widget::button::secondary)
+                .on_press(cancel)
+        ]
+        .spacing(8)
+    ]
+    .spacing(8)
+    .align_x(Horizontal::Center);
+
+    container(content)
+        .style(container::bordered_box)
+        .padding([16, 16])
+        .into()
+}

@@ -1,4 +1,4 @@
-use crate::layout::{modal, project_dialog};
+use crate::layout::{confirm_dialog, modal, project_dialog};
 use crate::view_controller::ViewController as VC;
 use iced::futures::TryFutureExt;
 use iced::widget::{button, column, container, row, text};
@@ -21,6 +21,7 @@ pub enum Message {
     ProjectOpened(Project),
     OpenEditProject(i64),
     SubmitEditProject(i64),
+    OpenConfirmDelete(i64),
     DeleteProject(i64),
     ProjectDeleted(i64),
     Cancel,
@@ -39,6 +40,7 @@ pub struct ViewController {
 pub enum Modal {
     NewProject,
     EditProject(i64),
+    ConfirmDelete(i64),
 }
 
 impl ViewController {
@@ -97,6 +99,10 @@ impl VC for ViewController {
                 } else {
                     iced::Task::none()
                 }
+            }
+            Message::OpenConfirmDelete(project_id) => {
+                self.modal = Some(Modal::ConfirmDelete(project_id));
+                iced::Task::none()
             }
             Message::DeleteProject(project_id) => {
                 let db = self.db.clone();
@@ -173,7 +179,7 @@ impl VC for ViewController {
 
                 let delete_btn = button(text("X").size(14))
                     .padding(8)
-                    .on_press(Message::DeleteProject(project.id));
+                    .on_press(Message::OpenConfirmDelete(project.id));
 
                 let row = row![name_btn, edit_btn, delete_btn]
                     .spacing(8)
@@ -227,6 +233,15 @@ impl VC for ViewController {
                     &self.new_project_name,
                     &Message::ProjectNameUpdated,
                     Message::SubmitEditProject(*project_id),
+                    Message::Cancel,
+                );
+
+                modal(base, dialog, Message::Cancel)
+            }
+            Some(Modal::ConfirmDelete(project_id)) => {
+                let dialog = confirm_dialog(
+                    format!("Are you sure you want to delete this project?"),
+                    Message::DeleteProject(*project_id),
                     Message::Cancel,
                 );
 
