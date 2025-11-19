@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use directories::BaseDirs;
 use iced::futures::TryFutureExt;
 use iced::widget::{center, text};
@@ -6,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::{Pool, Sqlite, SqlitePool};
 
-use crate::{backlog, sprint, view_controller::ViewController};
+use crate::{backlog, projects, sprint, view_controller::ViewController};
 
 const TO_DO: &str = "To do";
 const IN_PROGRESS: &str = "In progress";
@@ -19,6 +21,7 @@ const CONFIG_FILE: &str = "config.toml";
 #[derive(Debug, Clone)]
 pub enum Message {
     Initialised(Pool<Sqlite>, Config),
+    ProjectsMessage(projects::Message),
     BacklogMessage(backlog::Message),
     TaskMessage(sprint::Message),
     EventReceived(iced::Event),
@@ -40,14 +43,14 @@ impl Default for Config {
 pub struct Initialised {
     config: Config,
     db: Pool<Sqlite>,
-    backlog_controller: backlog::ViewController,
-    tasks_controller: sprint::ViewController,
     current_view: View,
+    current_project: Option<Rc<projects::Project>>,
 }
 
 pub enum View {
-    Backlog,
-    Sprint,
+    Projects(projects::ViewController),
+    Backlog(backlog::ViewController),
+    Sprint(sprint::ViewController),
 }
 
 pub enum App {
@@ -80,23 +83,15 @@ impl App {
     fn update_initialising(&mut self, msg: Message) -> iced::Task<Message> {
         match msg {
             Message::Initialised(pool, config) => {
-                if let Some(initial_lane) = config.lanes.get(0) {
-                    let (tasks_controller, task) =
-                        sprint::ViewController::new(pool.clone(), config.lanes.clone());
-                    let (backlog_controller, _) =
-                        backlog::ViewController::new(pool.clone(), initial_lane.to_owned());
+                let (projects_controller, task) = projects::ViewController::new(pool.clone());
 
-                    *self = App::Initialised(Initialised {
-                        config,
-                        db: pool.clone(),
-                        backlog_controller,
-                        tasks_controller,
-                        current_view: View::Sprint,
-                    });
-                    task.map(Message::TaskMessage)
-                } else {
-                    iced::Task::none()
-                }
+                *self = App::Initialised(Initialised {
+                    config,
+                    db: pool.clone(),
+                    current_view: View::Projects(projects_controller),
+                    current_project: None,
+                });
+                task.map(Message::ProjectsMessage)
             }
             Message::EventReceived(iced::Event::Window(iced::window::Event::CloseRequested)) => {
                 window::get_latest().and_then(window::close)
@@ -107,32 +102,75 @@ impl App {
 
     fn update_initialised(app: &mut Initialised, msg: Message) -> iced::Task<Message> {
         match msg {
-            Message::TaskMessage(sprint::Message::OpenBacklog) => {
+            Message::ProjectsMessage(projects::Message::ProjectOpened(project)) => {
                 if let Some(initial_lane) = app.config.lanes.get(0) {
-                    let (backlog_controller, task) =
-                        backlog::ViewController::new(app.db.clone(), initial_lane.to_owned());
-                    app.current_view = View::Backlog;
-                    app.backlog_controller = backlog_controller;
+                    // store project in app state and create backlog controller from it
+                    let rc = Rc::new(project);
+                    let (backlog_controller, task) = backlog::ViewController::new(
+                        app.db.clone(),
+                        initial_lane.to_owned(),
+                        rc.clone(),
+                    );
+                    app.current_view = View::Backlog(backlog_controller);
+                    app.current_project = Some(rc);
                     task.map(Message::BacklogMessage)
                 } else {
                     iced::Task::none()
                 }
             }
-            Message::TaskMessage(task_msg) => app
-                .tasks_controller
-                .update(task_msg)
-                .map(Message::TaskMessage),
-            Message::BacklogMessage(backlog::Message::OpenSprint) => {
-                let (tasks_controller, task) =
-                    sprint::ViewController::new(app.db.clone(), app.config.lanes.clone());
-                app.current_view = View::Sprint;
-                app.tasks_controller = tasks_controller;
-                task.map(Message::TaskMessage)
+            Message::ProjectsMessage(projects_msg) => {
+                if let View::Projects(controller) = &mut app.current_view {
+                    controller
+                        .update(projects_msg)
+                        .map(Message::ProjectsMessage)
+                } else {
+                    iced::Task::none()
+                }
             }
-            Message::BacklogMessage(backlog_msg) => app
-                .backlog_controller
-                .update(backlog_msg)
-                .map(Message::BacklogMessage),
+            Message::TaskMessage(sprint::Message::OpenBacklog) => {
+                if let Some(initial_lane) = app.config.lanes.get(0) {
+                    if let Some(project) = app.current_project.clone() {
+                        let (backlog_controller, task) = backlog::ViewController::new(
+                            app.db.clone(),
+                            initial_lane.to_owned(),
+                            project,
+                        );
+                        app.current_view = View::Backlog(backlog_controller);
+                        task.map(Message::BacklogMessage)
+                    } else {
+                        iced::Task::none()
+                    }
+                } else {
+                    iced::Task::none()
+                }
+            }
+            Message::TaskMessage(task_msg) => {
+                if let View::Sprint(controller) = &mut app.current_view {
+                    controller.update(task_msg).map(Message::TaskMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
+            Message::BacklogMessage(backlog::Message::OpenSprint) => {
+                if let Some(project) = app.current_project.clone() {
+                    let (tasks_controller, task) = sprint::ViewController::new(
+                        app.db.clone(),
+                        app.config.lanes.clone(),
+                        project,
+                    );
+                    app.current_view = View::Sprint(tasks_controller);
+                    task.map(Message::TaskMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
+            Message::BacklogMessage(backlog_msg) => {
+                if let View::Backlog(controller) = &mut app.current_view {
+                    controller.update(backlog_msg).map(Message::BacklogMessage)
+                } else {
+                    iced::Task::none()
+                }
+            }
             Message::EventReceived(event) => {
                 if let iced::Event::Window(iced::window::Event::CloseRequested) = event {
                     iced::Task::future(save_config(app.config.clone()))
@@ -149,9 +187,10 @@ impl App {
     pub fn view(&self) -> Element<'_, Message> {
         match self {
             App::Initiaising => center(text("Loading...")).into(),
-            App::Initialised(app) => match app.current_view {
-                View::Backlog => app.backlog_controller.view().map(Message::BacklogMessage),
-                View::Sprint => app.tasks_controller.view().map(Message::TaskMessage),
+            App::Initialised(app) => match &app.current_view {
+                View::Projects(ctrl) => ctrl.view().map(Message::ProjectsMessage),
+                View::Backlog(ctrl) => ctrl.view().map(Message::BacklogMessage),
+                View::Sprint(ctrl) => ctrl.view().map(Message::TaskMessage),
             },
         }
     }

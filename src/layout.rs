@@ -121,6 +121,38 @@ where
         .into()
 }
 
+pub fn project_dialog<'a, Message, TU>(
+    modal_title: String,
+    project_name: &'a str,
+    name_update: &'a TU,
+    submit: Message,
+    cancel: Message,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+    TU: Fn(String) -> Message + 'a,
+{
+    let content = column![
+        text(modal_title).size(24),
+        text("Name"),
+        text_input("", project_name)
+            .on_input(name_update)
+            .on_paste(name_update),
+        row![
+            button("Submit").on_press(submit),
+            button("Cancel").on_press(cancel)
+        ]
+        .spacing(8),
+    ]
+    .spacing(8)
+    .align_x(Horizontal::Center);
+
+    container(content)
+        .style(container::bordered_box)
+        .padding([16, 16])
+        .into()
+}
+
 pub fn task_dialog<'a, Message>(
     task: &'a Task,
     edit: Message,
@@ -156,5 +188,34 @@ where
     scrollable(column(tasks).spacing(4))
         .width(Length::Fill)
         .height(Length::Fill)
+        .into()
+}
+
+pub fn confirm_dialog<'a, Message>(
+    message: String,
+    confirm: Message,
+    cancel: Message,
+) -> Element<'a, Message>
+where
+    Message: Clone + 'a,
+{
+    let content = column![
+        text(message).size(20),
+        row![
+            button("Confirm")
+                .style(iced::widget::button::primary)
+                .on_press(confirm),
+            button("Cancel")
+                .style(iced::widget::button::secondary)
+                .on_press(cancel)
+        ]
+        .spacing(8)
+    ]
+    .spacing(8)
+    .align_x(Horizontal::Center);
+
+    container(content)
+        .style(container::bordered_box)
+        .padding([16, 16])
         .into()
 }

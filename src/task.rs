@@ -15,6 +15,7 @@ pub struct NewTask {
     pub description: Option<String>,
     pub lane: String,
     pub in_backlog: bool,
+    pub project_id: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -25,30 +26,39 @@ pub enum Modal {
 }
 
 impl NewTask {
-    pub fn new(title: String, description: Option<String>, lane: String, in_backlog: bool) -> Self {
+    pub fn new(
+        title: String,
+        description: Option<String>,
+        lane: String,
+        in_backlog: bool,
+        project_id: i64,
+    ) -> Self {
         NewTask {
             title,
             description,
             lane,
             in_backlog,
+            project_id,
         }
     }
 }
 
-pub async fn get_backlog_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
+pub async fn get_backlog_tasks(pool: Pool<Sqlite>, project_id: i64) -> Result<Vec<Task>, String> {
     sqlx::query_as!(
         Task,
-        "SELECT id, title, description, lane FROM tasks WHERE in_backlog"
+        "SELECT id, title, description, lane FROM tasks WHERE in_backlog AND project_id = ?",
+        project_id
     )
     .fetch_all(&pool)
     .map_err(|err| format!("got db err: {err}"))
     .await
 }
 
-pub async fn get_sprint_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
+pub async fn get_sprint_tasks(pool: Pool<Sqlite>, project_id: i64) -> Result<Vec<Task>, String> {
     sqlx::query_as!(
         Task,
-        "SELECT id, title, description, lane FROM tasks WHERE NOT in_backlog"
+        "SELECT id, title, description, lane FROM tasks WHERE NOT in_backlog AND project_id = ?",
+        project_id
     )
     .fetch_all(&pool)
     .map_err(|err| format!("got db err: {err}"))
@@ -57,11 +67,12 @@ pub async fn get_sprint_tasks(pool: Pool<Sqlite>) -> Result<Vec<Task>, String> {
 
 pub async fn insert_task(pool: Pool<Sqlite>, t: NewTask) -> Result<(), String> {
     sqlx::query!(
-        "INSERT INTO tasks (title, description, lane, in_backlog) VALUES (?, ?, ?, ?)",
+        "INSERT INTO tasks (title, description, lane, in_backlog, project_id) VALUES (?, ?, ?, ?, ?)",
         t.title,
         t.description,
         t.lane,
         t.in_backlog,
+        t.project_id,
     )
     .execute(&pool)
     .map_err(|_| "Error inserting task into db".into())
