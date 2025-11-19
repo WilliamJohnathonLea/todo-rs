@@ -76,7 +76,7 @@ pub async fn insert_task(pool: Pool<Sqlite>, t: NewTask) -> Result<(), String> {
     )
     .execute(&pool)
     .map_err(|_| "Error inserting task into db".into())
-    .map_ok(|_| println!("Inserted task with title {} in project {}", t.title, t.project_id))
+    .map_ok(|_| ())
     .await
 }
 
